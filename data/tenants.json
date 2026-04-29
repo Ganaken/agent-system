@@ -1,0 +1,18 @@
+[
+  {
+    "id": "ten-001",
+    "name": "Ahmed Al-Rashid",
+    "email": "ahmed.alrashid@email.com",
+    "phone": "+971501234567",
+    "unitId": "prop-001",
+    "nationality": "UAE"
+  },
+  {
+    "id": "ten-002",
+    "name": "Sarah Johnson",
+    "email": "sarah.johnson@email.com",
+    "phone": "+971509876543",
+    "unitId": "prop-002",
+    "nationality": "UK"
+  }
+]

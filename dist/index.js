@@ -1,0 +1,71 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+require("dotenv/config");
+const express_1 = __importDefault(require("express"));
+const data_1 = require("./utils/data");
+const scheduler_1 = require("./services/scheduler");
+const tenants_1 = __importDefault(require("./routes/tenants"));
+const properties_1 = __importDefault(require("./routes/properties"));
+const cheques_1 = __importDefault(require("./routes/cheques"));
+const contracts_1 = __importDefault(require("./routes/contracts"));
+const service_charges_1 = __importDefault(require("./routes/service-charges"));
+const chat_1 = __importDefault(require("./routes/chat"));
+const rera_1 = __importDefault(require("./routes/rera"));
+(0, data_1.ensureDataDir)();
+const app = (0, express_1.default)();
+app.use(express_1.default.json());
+// API routes
+app.use('/api/tenants', tenants_1.default);
+app.use('/api/properties', properties_1.default);
+app.use('/api/cheques', cheques_1.default);
+app.use('/api/contracts', contracts_1.default);
+app.use('/api/service-charges', service_charges_1.default);
+app.use('/api/chat', chat_1.default);
+app.use('/api/rera', rera_1.default);
+// Health check + route listing
+app.get('/health', (_req, res) => {
+    res.json({
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        routes: [
+            'GET  /api/tenants',
+            'POST /api/tenants',
+            'GET  /api/properties',
+            'POST /api/properties',
+            'GET  /api/cheques',
+            'GET  /api/cheques/due',
+            'POST /api/cheques',
+            'PATCH /api/cheques/:id/status',
+            'GET  /api/contracts',
+            'GET  /api/contracts/expiring',
+            'POST /api/contracts',
+            'GET  /api/service-charges',
+            'GET  /api/service-charges/due',
+            'POST /api/service-charges',
+            'POST /api/chat',
+            'POST /api/rera/check',
+        ],
+    });
+});
+const PORT = parseInt(process.env.PORT || '3000', 10);
+app.listen(PORT, () => {
+    console.log('');
+    console.log('╔════════════════════════════════════════════╗');
+    console.log('║   Dubai Landlord Management System  🏙️     ║');
+    console.log(`║   Running on http://localhost:${PORT}          ║`);
+    console.log('╚════════════════════════════════════════════╝');
+    console.log('');
+    console.log('  API endpoints:');
+    console.log('  GET  /api/cheques/due         — cheques due in 30 days');
+    console.log('  GET  /api/contracts/expiring  — contracts expiring in 120 days');
+    console.log('  GET  /api/service-charges/due — service charges due');
+    console.log('  POST /api/chat                — ask in Arabic or English');
+    console.log('  POST /api/rera/check          — RERA rent increase calculator');
+    console.log('  GET  /health                  — all routes');
+    console.log('');
+    (0, scheduler_1.startScheduler)();
+});
+//# sourceMappingURL=index.js.map
