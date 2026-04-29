@@ -4,10 +4,9 @@ import { allData, daysUntil } from '../utils/data';
 
 const router = Router();
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
 router.post('/', async (req, res) => {
   try {
+    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
     const { message } = req.body as { message?: string };
     if (!message?.trim()) {
       res.status(400).json({ error: 'message is required' });
