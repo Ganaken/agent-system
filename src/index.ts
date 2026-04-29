@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import { ensureDataDir } from './utils/data';
 import { startScheduler } from './services/scheduler';
+import { sendEmail } from './services/email';
 import tenantsRouter from './routes/tenants';
 import propertiesRouter from './routes/properties';
 import chequesRouter from './routes/cheques';
@@ -26,6 +27,22 @@ app.use('/api/service-charges', serviceChargesRouter);
 app.use('/api/chat', chatRouter);
 app.use('/api/rera', reraRouter);
 app.use('/api/whatsapp', whatsappRouter);
+
+// Debug: test email
+app.get('/api/test-email', async (_req: Request, res: Response) => {
+  const to = process.env.GMAIL_USER;
+  if (!to) {
+    res.status(500).send('GMAIL_USER env var is not set');
+    return;
+  }
+  try {
+    await sendEmail(to, 'Test Email', '<p>This is a test email from the Dubai Landlord Management System.</p>');
+    res.send('Email sent successfully');
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? `${err.message}\n${err.stack}` : String(err);
+    res.status(500).send(msg);
+  }
+});
 
 // Health check + route listing
 app.get('/health', (_req: Request, res: Response) => {
