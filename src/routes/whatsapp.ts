@@ -6,7 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import { allData, daysUntil, getTenants, getContracts, getProperties } from '../utils/data';
 import { loadHistory, saveHistory, cleanExpiredConversations } from '../utils/conversation';
-import { sendToNumber } from '../services/whatsapp';
+import { sendEmail } from '../services/email';
 import { calculateRentIncrease } from '../services/rera';
 import { importExcelBuffer } from '../utils/excel-import';
 
@@ -96,6 +96,7 @@ async function toolSendRenewalNotice(tenantName: string, increasePercent: number
 
   const tenant = tenants.find(t => t.name.toLowerCase().includes(tenantName.toLowerCase()));
   if (!tenant) return `Tenant "${tenantName}" not found in database.`;
+  if (!tenant.email) return `No email address on file for ${tenant.name}.`;
 
   const contract = contracts.find(c => c.tenantId === tenant.id && c.status === 'active');
   if (!contract) return `No active contract found for ${tenant.name}.`;
@@ -109,27 +110,29 @@ async function toolSendRenewalNotice(tenantName: string, increasePercent: number
   const endDate = formatDate(contract.endDate);
   const days = daysUntil(contract.endDate);
 
-  const notice = [
-    `🏠 ${unitLabel}`,
-    `📋 Contract Renewal Notice`,
-    `📅 Contract ends: ${endDate} (${days} days)`,
-    `💰 Current rent: AED ${contract.rentAmount.toLocaleString()}`,
-    `💰 New rent: AED ${newRent.toLocaleString()} (${increasePercent}% increase)`,
-    `📞 Please contact us to confirm renewal.`,
-    ``,
-    `─────────────────────`,
-    ``,
-    `عزيزي ${tenant.name}،`,
-    `إشعار بتجديد عقد الإيجار`,
-    `🏠 الوحدة: ${unitLabel}`,
-    `📅 تاريخ انتهاء العقد: ${endDate}`,
-    `💰 الإيجار الحالي: ${contract.rentAmount.toLocaleString()} درهم`,
-    `💰 الإيجار الجديد: ${newRent.toLocaleString()} درهم (زيادة ${increasePercent}%)`,
-    `📞 يرجى التواصل معنا لتأكيد التجديد.`,
-  ].join('\n');
+  const html = `
+<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;border:1px solid #ddd;border-radius:8px;overflow:hidden">
+  <div style="background:#1a5276;color:#fff;padding:20px">
+    <h2 style="margin:0">Contract Renewal Notice | إشعار تجديد العقد</h2>
+    <p style="margin:4px 0 0">${unitLabel} — ${days} days remaining</p>
+  </div>
+  <div style="padding:24px">
+    <p>Dear <b>${tenant.name}</b>,</p>
+    <p>Your tenancy contract for <b>${unitLabel}</b> will expire in <b>${days} days</b> on <b>${endDate}</b>.</p>
+    <p>Current rent: <b>AED ${contract.rentAmount.toLocaleString()}</b>/year</p>
+    <p>New rent: <b>AED ${newRent.toLocaleString()}</b>/year (${increasePercent}% increase)</p>
+    <p>Please contact us to confirm renewal.</p>
+    <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
+    <p>عزيزي <b>${tenant.name}</b>،</p>
+    <p>ينتهي عقد إيجارك للوحدة <b>${unitLabel}</b> خلال <b>${days} يوماً</b> بتاريخ <b>${endDate}</b>.</p>
+    <p>الإيجار الحالي: <b>AED ${contract.rentAmount.toLocaleString()}</b>/سنة</p>
+    <p>الإيجار الجديد: <b>AED ${newRent.toLocaleString()}</b>/سنة (زيادة ${increasePercent}%)</p>
+    <p>يرجى التواصل معنا لتأكيد التجديد.</p>
+  </div>
+</div>`;
 
-  await sendToNumber(normalizeWhatsApp(tenant.phone), notice);
-  return `✅ Notice sent to ${tenant.name} at ${tenant.phone}`;
+  await sendEmail(tenant.email, 'Contract Renewal Notice | إشعار تجديد العقد', html);
+  return `✅ Renewal notice emailed to ${tenant.name} (${tenant.email})`;
 }
 
 async function toolSendReminderToTenant(tenantName: string): Promise<string> {
@@ -139,6 +142,7 @@ async function toolSendReminderToTenant(tenantName: string): Promise<string> {
 
   const tenant = tenants.find(t => t.name.toLowerCase().includes(tenantName.toLowerCase()));
   if (!tenant) return `Tenant "${tenantName}" not found in database.`;
+  if (!tenant.email) return `No email address on file for ${tenant.name}.`;
 
   const contract = contracts.find(c => c.tenantId === tenant.id && c.status === 'active');
   if (!contract) return `No active contract found for ${tenant.name}.`;
@@ -150,20 +154,40 @@ async function toolSendReminderToTenant(tenantName: string): Promise<string> {
 
   const days = daysUntil(contract.endDate);
   const endDate = formatDate(contract.endDate);
-  const urgency = days <= 30 ? '🚨 URGENT' : days <= 60 ? '⚠️' : '📋';
+  const urgencyColor = days <= 30 ? '#c0392b' : days <= 60 ? '#e67e22' : '#2980b9';
+  const urgencyLabel = days <= 30 ? '🚨 URGENT' : days <= 60 ? '⚠️ Soon' : '📋 Upcoming';
 
-  const reminder = [
-    `${urgency} Contract Renewal Reminder`,
-    ``,
-    `🏠 ${unitLabel}`,
-    `📅 Ends: ${endDate} (${days} days)`,
-    `💰 Rent: AED ${contract.rentAmount.toLocaleString()}`,
-    ``,
-    `Please contact your landlord to discuss renewal.`,
-  ].join('\n');
+  const html = `
+<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;border:1px solid #ddd;border-radius:8px;overflow:hidden">
+  <div style="background:${urgencyColor};color:#fff;padding:20px">
+    <h2 style="margin:0">${urgencyLabel} — Contract Renewal Reminder</h2>
+    <p style="margin:4px 0 0">تذكير بتجديد العقد</p>
+  </div>
+  <div style="padding:24px">
+    <p>Dear <b>${tenant.name}</b>,</p>
+    <p>Your tenancy contract for <b>${unitLabel}</b> ends in <b>${days} days</b> on <b>${endDate}</b>.</p>
+    <p>Rent: <b>AED ${contract.rentAmount.toLocaleString()}</b>/year</p>
+    <p>Please contact your landlord to discuss renewal terms.</p>
+    <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
+    <p>عزيزي <b>${tenant.name}</b>،</p>
+    <p>ينتهي عقد إيجارك للوحدة <b>${unitLabel}</b> خلال <b>${days} يوماً</b> بتاريخ <b>${endDate}</b>.</p>
+    <p>الإيجار: <b>AED ${contract.rentAmount.toLocaleString()}</b>/سنة</p>
+    <p>يرجى التواصل مع المالك لمناقشة شروط التجديد.</p>
+  </div>
+</div>`;
 
-  await sendToNumber(normalizeWhatsApp(tenant.phone), reminder);
-  return `✅ Reminder sent to ${tenant.name} at ${tenant.phone}`;
+  await sendEmail(tenant.email, 'Contract Renewal Reminder | تذكير بتجديد العقد', html);
+  return `✅ Reminder emailed to ${tenant.name} (${tenant.email})`;
+}
+
+async function toolSendEmailToTenant(tenantName: string, subject: string, bodyHtml: string): Promise<string> {
+  const tenants = getTenants();
+  const tenant = tenants.find(t => t.name.toLowerCase().includes(tenantName.toLowerCase()));
+  if (!tenant) return `Tenant "${tenantName}" not found in database.`;
+  if (!tenant.email) return `No email address on file for ${tenant.name}.`;
+
+  await sendEmail(tenant.email, subject, bodyHtml);
+  return `✅ Email sent to ${tenant.name} (${tenant.email})`;
 }
 
 function toolUpdateReminderThreshold(days: number): string {
@@ -224,7 +248,7 @@ function toolCheckRERA(tenantName: string, marketRent?: number): string {
 const TOOLS: Anthropic.Tool[] = [
   {
     name: 'send_renewal_notice',
-    description: 'Send a bilingual (English + Arabic) WhatsApp renewal notice directly to a tenant, with a specified rent increase percentage.',
+    description: 'Send a bilingual (English + Arabic) contract renewal email to a tenant, with a specified rent increase percentage.',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -236,13 +260,26 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'send_reminder_to_tenant',
-    description: 'Send an immediate contract renewal reminder WhatsApp message to a specific tenant.',
+    description: 'Send an immediate contract renewal reminder email to a specific tenant.',
     input_schema: {
       type: 'object' as const,
       properties: {
         tenantName: { type: 'string', description: 'Tenant full or partial name' },
       },
       required: ['tenantName'],
+    },
+  },
+  {
+    name: 'send_email_to_tenant',
+    description: 'Send a custom professional bilingual email to a tenant. Use this when the landlord asks to email a tenant about any topic (e.g. "send Ahmed an email about contract renewal", "ابعث ايميل لأحمد"). You must write the full email subject and HTML body — make it professional and bilingual (English first, then Arabic after a <hr> divider).',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        tenantName: { type: 'string', description: 'Tenant full or partial name' },
+        subject: { type: 'string', description: 'Email subject line (bilingual if appropriate, e.g. "Contract Renewal | تجديد العقد")' },
+        bodyHtml: { type: 'string', description: 'Full HTML email body — professional styling, English section first, then Arabic section after a <hr/> divider' },
+      },
+      required: ['tenantName', 'subject', 'bodyHtml'],
     },
   },
   {
@@ -427,7 +464,8 @@ When showing cheques use:
 
 LANGUAGE: Detect the user's language and reply entirely in that language.
 RERA: For rent increase questions cite Dubai Decree 43/2013. Use the check_rera_increase tool.
-ACTIONS: Use the provided tools for any send/remind/update commands.`;
+ACTIONS: Use the provided tools for any send/remind/update commands.
+EMAIL: When the landlord asks to send an email to a tenant (in any language), use send_email_to_tenant. Write a professional bilingual email (English + Arabic) as the bodyHtml parameter. Never send WhatsApp to tenants.`;
 
     // First call — Claude may request tool use
     const firstResponse = await client.messages.create({
@@ -465,6 +503,13 @@ ACTIONS: Use the provided tools for any send/remind/update commands.`;
           break;
         case 'send_reminder_to_tenant':
           result = await toolSendReminderToTenant(input.tenantName as string);
+          break;
+        case 'send_email_to_tenant':
+          result = await toolSendEmailToTenant(
+            input.tenantName as string,
+            input.subject as string,
+            input.bodyHtml as string,
+          );
           break;
         case 'update_reminder_threshold':
           result = toolUpdateReminderThreshold(input.days as number);

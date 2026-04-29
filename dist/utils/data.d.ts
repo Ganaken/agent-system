@@ -1,4 +1,4 @@
-import type { Tenant, Property, Cheque, Contract, ServiceCharge } from '../types';
+import type { Tenant, Property, Cheque, Contract, ServiceCharge, Landlord } from '../types';
 export declare function ensureDataDir(): void;
 export declare function readJSON<T>(name: string): T[];
 export declare function writeJSON<T>(name: string, data: T[]): void;
@@ -12,9 +12,12 @@ export declare const getContracts: () => Contract[];
 export declare const saveContracts: (d: Contract[]) => void;
 export declare const getServiceCharges: () => ServiceCharge[];
 export declare const saveServiceCharges: (d: ServiceCharge[]) => void;
+export declare const getLandlords: () => Landlord[];
+export declare const saveLandlords: (d: Landlord[]) => void;
 export declare function daysUntil(dateStr: string): number;
 export declare function addMonths(dateStr: string, months: number): string;
 export declare function allData(): {
+    landlords: Landlord[];
     tenants: Tenant[];
     properties: Property[];
     cheques: Cheque[];

@@ -45,9 +45,7 @@ function chequeEmail(cheque, days) {
       <tr><td style="padding:8px;border:1px solid #eee;color:#666">Tenant</td><td style="padding:8px;border:1px solid #eee"><b>${cheque.tenantName}</b></td></tr>
       <tr><td style="padding:8px;border:1px solid #eee;color:#666">Unit</td><td style="padding:8px;border:1px solid #eee">${cheque.unit}</td></tr>
       <tr><td style="padding:8px;border:1px solid #eee;color:#666">Amount</td><td style="padding:8px;border:1px solid #eee"><b>AED ${cheque.amount.toLocaleString()}</b></td></tr>
-      <tr><td style="padding:8px;border:1px solid #eee;color:#666">Cheque Date</td><td style="padding:8px;border:1px solid #eee">${cheque.chequeDate}</td></tr>
-      <tr><td style="padding:8px;border:1px solid #eee;color:#666">Cheque #</td><td style="padding:8px;border:1px solid #eee">${cheque.chequeNumber}</td></tr>
-      <tr><td style="padding:8px;border:1px solid #eee;color:#666">Bank</td><td style="padding:8px;border:1px solid #eee">${cheque.bankName}</td></tr>
+      <tr><td style="padding:8px;border:1px solid #eee;color:#666">Due Date</td><td style="padding:8px;border:1px solid #eee">${cheque.chequeDate}</td></tr>
     </table>
     <p style="color:#666;margin-top:16px;font-size:14px">Please ensure this cheque is deposited on time to avoid any issues.</p>
   </div>

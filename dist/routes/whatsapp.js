@@ -5,11 +5,15 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const sdk_1 = __importDefault(require("@anthropic-ai/sdk"));
+const https_1 = __importDefault(require("https"));
+const http_1 = __importDefault(require("http"));
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
 const data_1 = require("../utils/data");
-const whatsapp_1 = require("../services/whatsapp");
+const conversation_1 = require("../utils/conversation");
+const email_1 = require("../services/email");
 const rera_1 = require("../services/rera");
+const excel_import_1 = require("../utils/excel-import");
 const router = (0, express_1.Router)();
 // ─── Config (reminder threshold) ─────────────────────────────────────────────
 const CONFIG_PATH = path_1.default.resolve(process.cwd(), process.env.DATA_DIR || './data', 'config.json');
@@ -50,6 +54,32 @@ function normalizeWhatsApp(phone) {
         return `whatsapp:+971${digits.slice(1)}`;
     return `whatsapp:+971${digits}`;
 }
+// ─── Media download ───────────────────────────────────────────────────────────
+function downloadTwilioMedia(mediaUrl) {
+    return new Promise((resolve, reject) => {
+        const accountSid = process.env.TWILIO_ACCOUNT_SID ?? '';
+        const authToken = process.env.TWILIO_AUTH_TOKEN ?? '';
+        const auth = Buffer.from(`${accountSid}:${authToken}`).toString('base64');
+        const parsed = new URL(mediaUrl);
+        const lib = parsed.protocol === 'https:' ? https_1.default : http_1.default;
+        const req = lib.get(mediaUrl, { headers: { Authorization: `Basic ${auth}` } }, res => {
+            // Follow up to 3 redirects
+            if ((res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 307) && res.headers.location) {
+                downloadTwilioMedia(res.headers.location).then(resolve).catch(reject);
+                return;
+            }
+            if (res.statusCode && res.statusCode >= 400) {
+                reject(new Error(`HTTP ${res.statusCode} downloading media`));
+                return;
+            }
+            const chunks = [];
+            res.on('data', (chunk) => chunks.push(chunk));
+            res.on('end', () => resolve(Buffer.concat(chunks)));
+            res.on('error', reject);
+        });
+        req.on('error', reject);
+    });
+}
 // ─── Tool implementations ─────────────────────────────────────────────────────
 async function toolSendRenewalNotice(tenantName, increasePercent) {
     const tenants = (0, data_1.getTenants)();
@@ -58,6 +88,8 @@ async function toolSendRenewalNotice(tenantName, increasePercent) {
     const tenant = tenants.find(t => t.name.toLowerCase().includes(tenantName.toLowerCase()));
     if (!tenant)
         return `Tenant "${tenantName}" not found in database.`;
+    if (!tenant.email)
+        return `No email address on file for ${tenant.name}.`;
     const contract = contracts.find(c => c.tenantId === tenant.id && c.status === 'active');
     if (!contract)
         return `No active contract found for ${tenant.name}.`;
@@ -68,26 +100,28 @@ async function toolSendRenewalNotice(tenantName, increasePercent) {
     const newRent = Math.round(contract.rentAmount * (1 + increasePercent / 100));
     const endDate = formatDate(contract.endDate);
     const days = (0, data_1.daysUntil)(contract.endDate);
-    const notice = [
-        `🏠 ${unitLabel}`,
-        `📋 Contract Renewal Notice`,
-        `📅 Contract ends: ${endDate} (${days} days)`,
-        `💰 Current rent: AED ${contract.rentAmount.toLocaleString()}`,
-        `💰 New rent: AED ${newRent.toLocaleString()} (${increasePercent}% increase)`,
-        `📞 Please contact us to confirm renewal.`,
-        ``,
-        `─────────────────────`,
-        ``,
-        `عزيزي ${tenant.name}،`,
-        `إشعار بتجديد عقد الإيجار`,
-        `🏠 الوحدة: ${unitLabel}`,
-        `📅 تاريخ انتهاء العقد: ${endDate}`,
-        `💰 الإيجار الحالي: ${contract.rentAmount.toLocaleString()} درهم`,
-        `💰 الإيجار الجديد: ${newRent.toLocaleString()} درهم (زيادة ${increasePercent}%)`,
-        `📞 يرجى التواصل معنا لتأكيد التجديد.`,
-    ].join('\n');
-    await (0, whatsapp_1.sendToNumber)(normalizeWhatsApp(tenant.phone), notice);
-    return `✅ Notice sent to ${tenant.name} at ${tenant.phone}`;
+    const html = `
+<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;border:1px solid #ddd;border-radius:8px;overflow:hidden">
+  <div style="background:#1a5276;color:#fff;padding:20px">
+    <h2 style="margin:0">Contract Renewal Notice | إشعار تجديد العقد</h2>
+    <p style="margin:4px 0 0">${unitLabel} — ${days} days remaining</p>
+  </div>
+  <div style="padding:24px">
+    <p>Dear <b>${tenant.name}</b>,</p>
+    <p>Your tenancy contract for <b>${unitLabel}</b> will expire in <b>${days} days</b> on <b>${endDate}</b>.</p>
+    <p>Current rent: <b>AED ${contract.rentAmount.toLocaleString()}</b>/year</p>
+    <p>New rent: <b>AED ${newRent.toLocaleString()}</b>/year (${increasePercent}% increase)</p>
+    <p>Please contact us to confirm renewal.</p>
+    <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
+    <p>عزيزي <b>${tenant.name}</b>،</p>
+    <p>ينتهي عقد إيجارك للوحدة <b>${unitLabel}</b> خلال <b>${days} يوماً</b> بتاريخ <b>${endDate}</b>.</p>
+    <p>الإيجار الحالي: <b>AED ${contract.rentAmount.toLocaleString()}</b>/سنة</p>
+    <p>الإيجار الجديد: <b>AED ${newRent.toLocaleString()}</b>/سنة (زيادة ${increasePercent}%)</p>
+    <p>يرجى التواصل معنا لتأكيد التجديد.</p>
+  </div>
+</div>`;
+    await (0, email_1.sendEmail)(tenant.email, 'Contract Renewal Notice | إشعار تجديد العقد', html);
+    return `✅ Renewal notice emailed to ${tenant.name} (${tenant.email})`;
 }
 async function toolSendReminderToTenant(tenantName) {
     const tenants = (0, data_1.getTenants)();
@@ -96,6 +130,8 @@ async function toolSendReminderToTenant(tenantName) {
     const tenant = tenants.find(t => t.name.toLowerCase().includes(tenantName.toLowerCase()));
     if (!tenant)
         return `Tenant "${tenantName}" not found in database.`;
+    if (!tenant.email)
+        return `No email address on file for ${tenant.name}.`;
     const contract = contracts.find(c => c.tenantId === tenant.id && c.status === 'active');
     if (!contract)
         return `No active contract found for ${tenant.name}.`;
@@ -105,18 +141,38 @@ async function toolSendReminderToTenant(tenantName) {
         : `Unit ${contract.unit}`;
     const days = (0, data_1.daysUntil)(contract.endDate);
     const endDate = formatDate(contract.endDate);
-    const urgency = days <= 30 ? '🚨 URGENT' : days <= 60 ? '⚠️' : '📋';
-    const reminder = [
-        `${urgency} Contract Renewal Reminder`,
-        ``,
-        `🏠 ${unitLabel}`,
-        `📅 Ends: ${endDate} (${days} days)`,
-        `💰 Rent: AED ${contract.rentAmount.toLocaleString()}`,
-        ``,
-        `Please contact your landlord to discuss renewal.`,
-    ].join('\n');
-    await (0, whatsapp_1.sendToNumber)(normalizeWhatsApp(tenant.phone), reminder);
-    return `✅ Reminder sent to ${tenant.name} at ${tenant.phone}`;
+    const urgencyColor = days <= 30 ? '#c0392b' : days <= 60 ? '#e67e22' : '#2980b9';
+    const urgencyLabel = days <= 30 ? '🚨 URGENT' : days <= 60 ? '⚠️ Soon' : '📋 Upcoming';
+    const html = `
+<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;border:1px solid #ddd;border-radius:8px;overflow:hidden">
+  <div style="background:${urgencyColor};color:#fff;padding:20px">
+    <h2 style="margin:0">${urgencyLabel} — Contract Renewal Reminder</h2>
+    <p style="margin:4px 0 0">تذكير بتجديد العقد</p>
+  </div>
+  <div style="padding:24px">
+    <p>Dear <b>${tenant.name}</b>,</p>
+    <p>Your tenancy contract for <b>${unitLabel}</b> ends in <b>${days} days</b> on <b>${endDate}</b>.</p>
+    <p>Rent: <b>AED ${contract.rentAmount.toLocaleString()}</b>/year</p>
+    <p>Please contact your landlord to discuss renewal terms.</p>
+    <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
+    <p>عزيزي <b>${tenant.name}</b>،</p>
+    <p>ينتهي عقد إيجارك للوحدة <b>${unitLabel}</b> خلال <b>${days} يوماً</b> بتاريخ <b>${endDate}</b>.</p>
+    <p>الإيجار: <b>AED ${contract.rentAmount.toLocaleString()}</b>/سنة</p>
+    <p>يرجى التواصل مع المالك لمناقشة شروط التجديد.</p>
+  </div>
+</div>`;
+    await (0, email_1.sendEmail)(tenant.email, 'Contract Renewal Reminder | تذكير بتجديد العقد', html);
+    return `✅ Reminder emailed to ${tenant.name} (${tenant.email})`;
+}
+async function toolSendEmailToTenant(tenantName, subject, bodyHtml) {
+    const tenants = (0, data_1.getTenants)();
+    const tenant = tenants.find(t => t.name.toLowerCase().includes(tenantName.toLowerCase()));
+    if (!tenant)
+        return `Tenant "${tenantName}" not found in database.`;
+    if (!tenant.email)
+        return `No email address on file for ${tenant.name}.`;
+    await (0, email_1.sendEmail)(tenant.email, subject, bodyHtml);
+    return `✅ Email sent to ${tenant.name} (${tenant.email})`;
 }
 function toolUpdateReminderThreshold(days) {
     const cfg = getConfig();
@@ -170,7 +226,7 @@ function toolCheckRERA(tenantName, marketRent) {
 const TOOLS = [
     {
         name: 'send_renewal_notice',
-        description: 'Send a bilingual (English + Arabic) WhatsApp renewal notice directly to a tenant, with a specified rent increase percentage.',
+        description: 'Send a bilingual (English + Arabic) contract renewal email to a tenant, with a specified rent increase percentage.',
         input_schema: {
             type: 'object',
             properties: {
@@ -182,13 +238,26 @@ const TOOLS = [
     },
     {
         name: 'send_reminder_to_tenant',
-        description: 'Send an immediate contract renewal reminder WhatsApp message to a specific tenant.',
+        description: 'Send an immediate contract renewal reminder email to a specific tenant.',
         input_schema: {
             type: 'object',
             properties: {
                 tenantName: { type: 'string', description: 'Tenant full or partial name' },
             },
             required: ['tenantName'],
+        },
+    },
+    {
+        name: 'send_email_to_tenant',
+        description: 'Send a custom professional bilingual email to a tenant. Use this when the landlord asks to email a tenant about any topic (e.g. "send Ahmed an email about contract renewal", "ابعث ايميل لأحمد"). You must write the full email subject and HTML body — make it professional and bilingual (English first, then Arabic after a <hr> divider).',
+        input_schema: {
+            type: 'object',
+            properties: {
+                tenantName: { type: 'string', description: 'Tenant full or partial name' },
+                subject: { type: 'string', description: 'Email subject line (bilingual if appropriate, e.g. "Contract Renewal | تجديد العقد")' },
+                bodyHtml: { type: 'string', description: 'Full HTML email body — professional styling, English section first, then Arabic section after a <hr/> divider' },
+            },
+            required: ['tenantName', 'subject', 'bodyHtml'],
         },
     },
     {
@@ -219,13 +288,72 @@ const TOOLS = [
 router.post('/incoming', async (req, res) => {
     res.setHeader('Content-Type', 'text/xml');
     const body = req.body;
-    const userMessage = body['Body']?.trim();
+    const userMessage = (body['Body'] ?? '').trim();
     const from = body['From'];
-    if (!userMessage || !from) {
+    const mediaUrl = body['MediaUrl0'];
+    const mediaType = (body['MediaContentType0'] ?? '').toLowerCase();
+    if (!from) {
+        res.send(twiml('Sorry, I could not understand your message.'));
+        return;
+    }
+    // ── Excel file upload ──────────────────────────────────────────────────────
+    console.log(`[WHATSAPP INCOMING] From: ${from} | MediaUrl0: ${mediaUrl ?? 'none'} | MediaContentType0: ${mediaType || 'none'}`);
+    const isExcel = mediaType.includes('spreadsheetml') ||
+        mediaType.includes('ms-excel') ||
+        mediaType.includes('xlsx') ||
+        mediaType.includes('xls') ||
+        (!!mediaUrl && /\.xlsx?(\?|$)/i.test(mediaUrl)) ||
+        mediaType === 'application/octet-stream';
+    if (mediaUrl && isExcel) {
+        try {
+            console.log(`[EXCEL IMPORT] Downloading from ${mediaUrl}`);
+            const buffer = await downloadTwilioMedia(mediaUrl);
+            const result = (0, excel_import_1.importExcelBuffer)(buffer);
+            const totalImported = result.landlords + result.properties + result.tenants + result.cheques;
+            if (totalImported === 0) {
+                const errText = result.errors.length > 0 ? result.errors.join('\n') : 'No data found in the file.';
+                res.send(twiml(`Could not import data:\n${errText}`));
+                return;
+            }
+            const lines = ['✅ Data imported successfully!'];
+            if (result.landlords > 0)
+                lines.push(`👤 ${result.landlords} landlord${result.landlords !== 1 ? 's' : ''} added`);
+            if (result.properties > 0)
+                lines.push(`🏠 ${result.properties} propert${result.properties !== 1 ? 'ies' : 'y'} added`);
+            if (result.tenants > 0)
+                lines.push(`👤 ${result.tenants} tenant${result.tenants !== 1 ? 's' : ''} added`);
+            if (result.cheques > 0)
+                lines.push(`🧾 ${result.cheques} cheque${result.cheques !== 1 ? 's' : ''} added`);
+            if (result.errors.length > 0)
+                lines.push('', '⚠️ Warnings:', ...result.errors);
+            const summary = lines.join('\n');
+            console.log(`[EXCEL IMPORT] ${summary.slice(0, 120)}`);
+            res.send(twiml(summary));
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            console.error('[EXCEL IMPORT ERROR]', msg);
+            res.send(twiml(`Failed to process the file. Make sure it is a valid .xlsx file.\n${msg}`));
+        }
+        return;
+    }
+    // ── "import data" trigger phrase ───────────────────────────────────────────
+    if (userMessage.toLowerCase() === 'import data' || userMessage === 'استيراد البيانات') {
+        res.send(twiml('Please send your Excel file (.xlsx) with these sheets:\n' +
+            '• Landlords\n' +
+            '• Properties\n' +
+            '• Tenants\n' +
+            '• Cheques\n\n' +
+            'I will import the data automatically.'));
+        return;
+    }
+    if (!userMessage) {
         res.send(twiml('Sorry, I could not understand your message.'));
         return;
     }
     try {
+        (0, conversation_1.cleanExpiredConversations)();
+        const history = (0, conversation_1.loadHistory)(from);
         const client = new sdk_1.default({ apiKey: process.env.ANTHROPIC_API_KEY });
         const today = new Date().toISOString().split('T')[0];
         const data = (0, data_1.allData)();
@@ -235,10 +363,20 @@ router.post('/incoming', async (req, res) => {
             daysUntilExpiry: (0, data_1.daysUntil)(c.endDate),
             formattedEndDate: formatDate(c.endDate),
         }));
-        const annotatedCheques = data.cheques.map(c => ({
-            ...c,
-            daysUntilDue: (0, data_1.daysUntil)(c.chequeDate),
-        }));
+        const annotatedCheques = data.cheques.map(c => {
+            // Support both original format (chequeDate/unit) and Excel-imported format (dueDate/property)
+            const raw = c;
+            const dateField = raw['dueDate'] || c.chequeDate || '';
+            return {
+                id: c.id,
+                tenantName: c.tenantName,
+                location: c.unit || raw['property'] || '',
+                amount: c.amount,
+                dueDate: dateField,
+                status: c.status || 'pending',
+                daysUntilDue: dateField ? (0, data_1.daysUntil)(dateField) : null,
+            };
+        });
         const annotatedCharges = data.serviceCharges.map(c => ({
             ...c,
             daysUntilDue: (0, data_1.daysUntil)(c.nextDueDate),
@@ -247,6 +385,9 @@ router.post('/incoming', async (req, res) => {
 Reminder threshold: ${config.renewalReminderDays} days before contract end.
 
 DATA ACCESS:
+
+LANDLORDS:
+${JSON.stringify(data.landlords, null, 2)}
 
 PROPERTIES:
 ${JSON.stringify(data.properties, null, 2)}
@@ -282,26 +423,28 @@ Status rules:
   otherwise             → ✅ All good
 
 When showing cheques use:
-💳 [Tenant] — Unit [X]
-📅 Due: [DD Mon YYYY] ([N] days)
-💰 AED [amount] | [Bank] | Cheque [number]
+🧾 [Tenant Name] - [Unit]
+💰 AED [Amount]
+📅 Due: [DD Mon YYYY] ([X] days)
 [🚨 Overdue | ⚠️ Due soon | ✅ OK]
 
 LANGUAGE: Detect the user's language and reply entirely in that language.
 RERA: For rent increase questions cite Dubai Decree 43/2013. Use the check_rera_increase tool.
-ACTIONS: Use the provided tools for any send/remind/update commands.`;
+ACTIONS: Use the provided tools for any send/remind/update commands.
+EMAIL: When the landlord asks to send an email to a tenant (in any language), use send_email_to_tenant. Write a professional bilingual email (English + Arabic) as the bodyHtml parameter. Never send WhatsApp to tenants.`;
         // First call — Claude may request tool use
         const firstResponse = await client.messages.create({
             model: 'claude-sonnet-4-6',
             max_tokens: 1024,
             system: systemPrompt,
             tools: TOOLS,
-            messages: [{ role: 'user', content: userMessage }],
+            messages: [...history, { role: 'user', content: userMessage }],
         });
         // If no tool call, return the text directly
         if (firstResponse.stop_reason !== 'tool_use') {
             const textBlock = firstResponse.content.find(b => b.type === 'text');
             const answer = textBlock?.type === 'text' ? textBlock.text : 'Sorry, I could not generate a response.';
+            (0, conversation_1.saveHistory)(from, userMessage, answer);
             console.log(`[WHATSAPP BOT] From: ${from} | Q: ${userMessage.slice(0, 60)} | A: ${answer.slice(0, 60)}`);
             res.send(twiml(answer));
             return;
@@ -319,6 +462,9 @@ ACTIONS: Use the provided tools for any send/remind/update commands.`;
                     break;
                 case 'send_reminder_to_tenant':
                     result = await toolSendReminderToTenant(input.tenantName);
+                    break;
+                case 'send_email_to_tenant':
+                    result = await toolSendEmailToTenant(input.tenantName, input.subject, input.bodyHtml);
                     break;
                 case 'update_reminder_threshold':
                     result = toolUpdateReminderThreshold(input.days);
@@ -339,6 +485,7 @@ ACTIONS: Use the provided tools for any send/remind/update commands.`;
             system: systemPrompt,
             tools: TOOLS,
             messages: [
+                ...history,
                 { role: 'user', content: userMessage },
                 { role: 'assistant', content: firstResponse.content },
                 { role: 'user', content: toolResults },
@@ -348,6 +495,7 @@ ACTIONS: Use the provided tools for any send/remind/update commands.`;
         const answer = textBlock?.type === 'text'
             ? textBlock.text
             : toolResults.map(r => r.content).join('\n');
+        (0, conversation_1.saveHistory)(from, userMessage, answer);
         console.log(`[WHATSAPP BOT] From: ${from} | Q: ${userMessage.slice(0, 60)} | A: ${answer.slice(0, 60)}`);
         res.send(twiml(answer));
     }

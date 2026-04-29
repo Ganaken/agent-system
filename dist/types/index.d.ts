@@ -22,8 +22,6 @@ export interface Cheque {
     unit: string;
     propertyId: string;
     amount: number;
-    chequeNumber: string;
-    bankName: string;
     chequeDate: string;
     status: 'pending' | 'deposited' | 'bounced';
     reminderSent30?: boolean;
@@ -52,5 +50,13 @@ export interface ServiceCharge {
     lastPaymentDate: string;
     nextDueDate: string;
     frequency: 'quarterly' | 'annual';
+}
+export interface Landlord {
+    id: string;
+    name: string;
+    relationship: string;
+    email: string;
+    whatsapp: string;
+    emiratesId: string;
 }
 //# sourceMappingURL=index.d.ts.map

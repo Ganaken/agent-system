@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.saveServiceCharges = exports.getServiceCharges = exports.saveContracts = exports.getContracts = exports.saveCheques = exports.getCheques = exports.saveProperties = exports.getProperties = exports.saveTenants = exports.getTenants = void 0;
+exports.saveLandlords = exports.getLandlords = exports.saveServiceCharges = exports.getServiceCharges = exports.saveContracts = exports.getContracts = exports.saveCheques = exports.getCheques = exports.saveProperties = exports.getProperties = exports.saveTenants = exports.getTenants = void 0;
 exports.ensureDataDir = ensureDataDir;
 exports.readJSON = readJSON;
 exports.writeJSON = writeJSON;
@@ -51,6 +51,10 @@ const getServiceCharges = () => readJSON('service-charges.json');
 exports.getServiceCharges = getServiceCharges;
 const saveServiceCharges = (d) => writeJSON('service-charges.json', d);
 exports.saveServiceCharges = saveServiceCharges;
+const getLandlords = () => readJSON('landlords.json');
+exports.getLandlords = getLandlords;
+const saveLandlords = (d) => writeJSON('landlords.json', d);
+exports.saveLandlords = saveLandlords;
 function daysUntil(dateStr) {
     const now = new Date();
     const todayUTC = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
@@ -65,6 +69,7 @@ function addMonths(dateStr, months) {
 }
 function allData() {
     return {
+        landlords: (0, exports.getLandlords)(),
         tenants: (0, exports.getTenants)(),
         properties: (0, exports.getProperties)(),
         cheques: (0, exports.getCheques)(),

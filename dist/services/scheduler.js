@@ -27,7 +27,7 @@ async function checkChequeReminders() {
         if (days <= 7 && !cheque.reminderSent7) {
             const subject = `🚨 URGENT: Cheque due in ${days} days — ${cheque.tenantName} Unit ${cheque.unit}`;
             await (0, email_1.sendEmail)(MY_EMAIL(), subject, (0, email_1.chequeEmail)(cheque, days));
-            await (0, whatsapp_1.sendAlert)(`🚨 URGENT: Cheque due in ${days} days\nTenant: ${cheque.tenantName} | Unit: ${cheque.unit}\nAmount: AED ${cheque.amount.toLocaleString()} | Date: ${cheque.chequeDate}\nCheque: ${cheque.chequeNumber} | Bank: ${cheque.bankName}`);
+            await (0, whatsapp_1.sendAlert)(`🚨 URGENT: Cheque due in ${days} days\nTenant: ${cheque.tenantName} | Unit: ${cheque.unit}\nAmount: AED ${cheque.amount.toLocaleString()} | Date: ${cheque.chequeDate}`);
             cheque.reminderSent7 = true;
             cheque.reminderSent14 = true;
             cheque.reminderSent30 = true;
@@ -36,7 +36,7 @@ async function checkChequeReminders() {
         else if (days <= 14 && !cheque.reminderSent14) {
             const subject = `⚠️ Cheque due in ${days} days — ${cheque.tenantName} Unit ${cheque.unit}`;
             await (0, email_1.sendEmail)(MY_EMAIL(), subject, (0, email_1.chequeEmail)(cheque, days));
-            await (0, whatsapp_1.sendAlert)(`⚠️ Cheque due in ${days} days\nTenant: ${cheque.tenantName} | Unit: ${cheque.unit}\nAmount: AED ${cheque.amount.toLocaleString()} | Date: ${cheque.chequeDate}\nCheque: ${cheque.chequeNumber} | Bank: ${cheque.bankName}`);
+            await (0, whatsapp_1.sendAlert)(`⚠️ Cheque due in ${days} days\nTenant: ${cheque.tenantName} | Unit: ${cheque.unit}\nAmount: AED ${cheque.amount.toLocaleString()} | Date: ${cheque.chequeDate}`);
             cheque.reminderSent14 = true;
             cheque.reminderSent30 = true;
             changed = true;
@@ -44,7 +44,7 @@ async function checkChequeReminders() {
         else if (days <= 30 && !cheque.reminderSent30) {
             const subject = `📅 Cheque due in ${days} days — ${cheque.tenantName} Unit ${cheque.unit}`;
             await (0, email_1.sendEmail)(MY_EMAIL(), subject, (0, email_1.chequeEmail)(cheque, days));
-            await (0, whatsapp_1.sendAlert)(`📅 Cheque due in ${days} days\nTenant: ${cheque.tenantName} | Unit: ${cheque.unit}\nAmount: AED ${cheque.amount.toLocaleString()} | Date: ${cheque.chequeDate}\nCheque: ${cheque.chequeNumber} | Bank: ${cheque.bankName}`);
+            await (0, whatsapp_1.sendAlert)(`📅 Cheque due in ${days} days\nTenant: ${cheque.tenantName} | Unit: ${cheque.unit}\nAmount: AED ${cheque.amount.toLocaleString()} | Date: ${cheque.chequeDate}`);
             cheque.reminderSent30 = true;
             changed = true;
         }

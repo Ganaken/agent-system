@@ -132,6 +132,31 @@ function getRows(workbook: XLSX.WorkBook, sheetName: string): Record<string, unk
   return records;
 }
 
+// Reads a horizontally-structured sheet:
+//   Row 1  = title (skip)
+//   Row 2  = headers: col A, col B, col C, ...
+//   Row 3+ = data: one record per row
+// Returns one object per data row, keyed by the header values.
+function getHorizontalRows(workbook: XLSX.WorkBook, sheetName: string): Record<string, unknown>[] {
+  const sheet = workbook.Sheets[sheetName];
+  if (!sheet) return [];
+
+  const raw = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' }) as unknown[][];
+
+  if (raw.length < 3) return [];
+
+  const headers = (raw[1] as unknown[]).map(h => String(h ?? '').trim());
+  const dataRows = raw.slice(2);
+
+  return dataRows.map(row => {
+    const record: Record<string, unknown> = {};
+    headers.forEach((header, i) => {
+      if (header) record[header] = (row as unknown[])[i] ?? '';
+    });
+    return record;
+  });
+}
+
 function resolveSheetName(workbook: XLSX.WorkBook, target: string): string | undefined {
   return workbook.SheetNames.find(s => s.trim().toLowerCase() === target.toLowerCase());
 }
@@ -232,12 +257,13 @@ export function importExcelBuffer(buffer: Buffer): ImportResult {
   }
 
   // ── Cheques ────────────────────────────────────────────────────────────────
-  // Expected columns: #, Tenant Name, Property / Unit, Amount (AED), Due Date (DD/MM/YYYY)
+  // Horizontal layout: Row 1 = title, Row 2 = headers, Row 3+ = one cheque per row
+  // Columns: # (skip), Tenant Name, Property / Unit, Amount (AED), Due Date (DD/MM/YYYY)
   const chequeSheet = resolveSheetName(workbook, 'Cheques');
   if (chequeSheet) {
-    const rows = getRows(workbook, chequeSheet);
+    const rows = getHorizontalRows(workbook, chequeSheet);
     const data: ImportedCheque[] = rows
-      .filter(r => str(r, 'Tenant Name') && num(r, 'Amount (AED)') > 0)
+      .filter(r => str(r, 'Tenant Name'))
       .map(r => ({
         id: uuidv4(),
         tenantName: str(r, 'Tenant Name'),
