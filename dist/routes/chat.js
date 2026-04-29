@@ -6,7 +6,37 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const sdk_1 = __importDefault(require("@anthropic-ai/sdk"));
 const data_1 = require("../utils/data");
+const email_1 = require("../services/email");
 const router = (0, express_1.Router)();
+// ─── Tool: send_email ─────────────────────────────────────────────────────────
+async function toolSendEmail(to, subject, body) {
+    try {
+        await (0, email_1.sendEmail)(to, subject, body);
+        console.log(`EMAIL SENT TO: ${to}`);
+        return `✅ Email sent to ${to}`;
+    }
+    catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`EMAIL ERROR: ${msg}`);
+        return `❌ Email failed: ${msg}`;
+    }
+}
+const TOOLS = [
+    {
+        name: 'send_email',
+        description: 'Send an email to a recipient. Use this when the landlord asks to send an email to a tenant or any person. Write a professional bilingual (English + Arabic) HTML body.',
+        input_schema: {
+            type: 'object',
+            properties: {
+                to: { type: 'string', description: 'Recipient email address' },
+                subject: { type: 'string', description: 'Email subject line' },
+                body: { type: 'string', description: 'Full HTML email body' },
+            },
+            required: ['to', 'subject', 'body'],
+        },
+    },
+];
+// ─── Route ────────────────────────────────────────────────────────────────────
 router.post('/', async (req, res) => {
     try {
         const client = new sdk_1.default({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -17,7 +47,6 @@ router.post('/', async (req, res) => {
         }
         const today = new Date().toISOString().split('T')[0];
         const data = (0, data_1.allData)();
-        // Annotate cheques and contracts with daysUntil for easier reasoning
         const annotatedCheques = data.cheques.map(c => ({
             ...c,
             daysUntilDue: (0, data_1.daysUntil)(c.chequeDate),
@@ -57,15 +86,56 @@ RULES:
 - Format currency as AED.
 - Reference tenant names, unit numbers, and dates clearly.
 - For rent increase questions, cite Dubai RERA Decree 43/2013 rules.
-- Today is ${today}.`;
-        const response = await client.messages.create({
+- Today is ${today}.
+- EMAIL: When asked to send an email, you MUST call the send_email tool with the recipient's actual email address from the tenant data. Never just say you will send it — call the tool.`;
+        const messages = [{ role: 'user', content: message }];
+        // First call — Claude may request tool use
+        const firstResponse = await client.messages.create({
             model: 'claude-sonnet-4-6',
             max_tokens: 1024,
             system: systemPrompt,
-            messages: [{ role: 'user', content: message }],
+            tools: TOOLS,
+            messages,
         });
-        const answer = response.content[0].type === 'text' ? response.content[0].text : '';
-        res.json({ answer, model: response.model, usage: response.usage });
+        // No tool call — return text directly
+        if (firstResponse.stop_reason !== 'tool_use') {
+            const answer = firstResponse.content[0].type === 'text' ? firstResponse.content[0].text : '';
+            res.json({ answer, model: firstResponse.model, usage: firstResponse.usage });
+            return;
+        }
+        // Execute tool calls
+        const toolResults = [];
+        for (const block of firstResponse.content) {
+            if (block.type !== 'tool_use')
+                continue;
+            const input = block.input;
+            let result;
+            if (block.name === 'send_email') {
+                result = await toolSendEmail(input.to, input.subject, input.body);
+            }
+            else {
+                result = `Unknown tool: ${block.name}`;
+            }
+            console.log(`[CHAT TOOL] ${block.name}(to=${input.to ?? ''}) → ${result}`);
+            toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: result });
+        }
+        // Second call with tool results — Claude confirms the outcome
+        const secondResponse = await client.messages.create({
+            model: 'claude-sonnet-4-6',
+            max_tokens: 512,
+            system: systemPrompt,
+            tools: TOOLS,
+            messages: [
+                ...messages,
+                { role: 'assistant', content: firstResponse.content },
+                { role: 'user', content: toolResults },
+            ],
+        });
+        const textBlock = secondResponse.content.find(b => b.type === 'text');
+        const answer = textBlock?.type === 'text'
+            ? textBlock.text
+            : toolResults.map(r => r.content).join('\n');
+        res.json({ answer, model: secondResponse.model, usage: secondResponse.usage });
     }
     catch (err) {
         const msg = err instanceof Error ? err.message : String(err);

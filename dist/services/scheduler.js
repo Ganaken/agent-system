@@ -26,7 +26,13 @@ async function checkChequeReminders() {
             continue;
         if (days <= 7 && !cheque.reminderSent7) {
             const subject = `🚨 URGENT: Cheque due in ${days} days — ${cheque.tenantName} Unit ${cheque.unit}`;
-            await (0, email_1.sendEmail)(MY_EMAIL(), subject, (0, email_1.chequeEmail)(cheque, days));
+            try {
+                await (0, email_1.sendEmail)(MY_EMAIL(), subject, (0, email_1.chequeEmail)(cheque, days));
+            }
+            catch (err) {
+                const msg = err instanceof Error ? err.message : String(err);
+                await (0, whatsapp_1.sendAlert)(`❌ Email failed (cheque reminder):\n${msg}`);
+            }
             await (0, whatsapp_1.sendAlert)(`🚨 URGENT: Cheque due in ${days} days\nTenant: ${cheque.tenantName} | Unit: ${cheque.unit}\nAmount: AED ${cheque.amount.toLocaleString()} | Date: ${cheque.chequeDate}`);
             cheque.reminderSent7 = true;
             cheque.reminderSent14 = true;
@@ -35,7 +41,13 @@ async function checkChequeReminders() {
         }
         else if (days <= 14 && !cheque.reminderSent14) {
             const subject = `⚠️ Cheque due in ${days} days — ${cheque.tenantName} Unit ${cheque.unit}`;
-            await (0, email_1.sendEmail)(MY_EMAIL(), subject, (0, email_1.chequeEmail)(cheque, days));
+            try {
+                await (0, email_1.sendEmail)(MY_EMAIL(), subject, (0, email_1.chequeEmail)(cheque, days));
+            }
+            catch (err) {
+                const msg = err instanceof Error ? err.message : String(err);
+                await (0, whatsapp_1.sendAlert)(`❌ Email failed (cheque reminder):\n${msg}`);
+            }
             await (0, whatsapp_1.sendAlert)(`⚠️ Cheque due in ${days} days\nTenant: ${cheque.tenantName} | Unit: ${cheque.unit}\nAmount: AED ${cheque.amount.toLocaleString()} | Date: ${cheque.chequeDate}`);
             cheque.reminderSent14 = true;
             cheque.reminderSent30 = true;
@@ -43,7 +55,13 @@ async function checkChequeReminders() {
         }
         else if (days <= 30 && !cheque.reminderSent30) {
             const subject = `📅 Cheque due in ${days} days — ${cheque.tenantName} Unit ${cheque.unit}`;
-            await (0, email_1.sendEmail)(MY_EMAIL(), subject, (0, email_1.chequeEmail)(cheque, days));
+            try {
+                await (0, email_1.sendEmail)(MY_EMAIL(), subject, (0, email_1.chequeEmail)(cheque, days));
+            }
+            catch (err) {
+                const msg = err instanceof Error ? err.message : String(err);
+                await (0, whatsapp_1.sendAlert)(`❌ Email failed (cheque reminder):\n${msg}`);
+            }
             await (0, whatsapp_1.sendAlert)(`📅 Cheque due in ${days} days\nTenant: ${cheque.tenantName} | Unit: ${cheque.unit}\nAmount: AED ${cheque.amount.toLocaleString()} | Date: ${cheque.chequeDate}`);
             cheque.reminderSent30 = true;
             changed = true;
@@ -67,9 +85,23 @@ async function checkContractRenewals() {
         const prop = properties.find(p => p.id === contract.propertyId);
         const area = prop?.area ?? 'Dubai';
         const reraInfo = await (0, rera_1.getRERAInfo)(area, contract.rentAmount);
-        await (0, email_1.sendEmail)(contract.tenantEmail, `Contract Renewal Notice — Unit ${contract.unit} | إشعار تجديد العقد`, (0, email_1.tenantRenewalEmail)(contract, days));
-        await (0, email_1.sendEmail)(MY_EMAIL(), `📋 Contract expiring in ${days} days — ${contract.tenantName} Unit ${contract.unit}`, (0, email_1.landlordContractEmail)(contract, days, reraInfo));
-        await (0, whatsapp_1.sendAlert)(`📋 Contract expiring in ${days} days\nTenant: ${contract.tenantName} | Unit: ${contract.unit}\nEnd Date: ${contract.endDate}\nRent: AED ${contract.rentAmount.toLocaleString()}/year\n✅ Renewal notice sent to ${contract.tenantEmail}`);
+        let tenantEmailOk = true;
+        try {
+            await (0, email_1.sendEmail)(contract.tenantEmail, `Contract Renewal Notice — Unit ${contract.unit} | إشعار تجديد العقد`, (0, email_1.tenantRenewalEmail)(contract, days));
+        }
+        catch (err) {
+            tenantEmailOk = false;
+            const msg = err instanceof Error ? err.message : String(err);
+            await (0, whatsapp_1.sendAlert)(`❌ Email failed (tenant renewal notice — ${contract.tenantName}):\n${msg}`);
+        }
+        try {
+            await (0, email_1.sendEmail)(MY_EMAIL(), `📋 Contract expiring in ${days} days — ${contract.tenantName} Unit ${contract.unit}`, (0, email_1.landlordContractEmail)(contract, days, reraInfo));
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            await (0, whatsapp_1.sendAlert)(`❌ Email failed (landlord contract summary):\n${msg}`);
+        }
+        await (0, whatsapp_1.sendAlert)(`📋 Contract expiring in ${days} days\nTenant: ${contract.tenantName} | Unit: ${contract.unit}\nEnd Date: ${contract.endDate}\nRent: AED ${contract.rentAmount.toLocaleString()}/year\n${tenantEmailOk ? `✅ Renewal notice sent to ${contract.tenantEmail}` : `⚠️ Email to tenant failed`}`);
         contract.renewalEmailSent = true;
         changed = true;
     }
@@ -85,7 +117,13 @@ async function checkServiceCharges() {
         const days = (0, data_1.daysUntil)(charge.nextDueDate);
         if (days > 0)
             continue;
-        await (0, email_1.sendEmail)(MY_EMAIL(), `🏢 Service charge due — ${charge.propertyName} Unit ${charge.unit}`, (0, email_1.serviceChargeEmail)(charge));
+        try {
+            await (0, email_1.sendEmail)(MY_EMAIL(), `🏢 Service charge due — ${charge.propertyName} Unit ${charge.unit}`, (0, email_1.serviceChargeEmail)(charge));
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            await (0, whatsapp_1.sendAlert)(`❌ Email failed (service charge — ${charge.propertyName} Unit ${charge.unit}):\n${msg}`);
+        }
         await (0, whatsapp_1.sendAlert)(`🏢 Service charge due\nProperty: ${charge.propertyName} | Unit: ${charge.unit}\nAmount: AED ${charge.amount.toLocaleString()} | Due: ${charge.nextDueDate}\nPay to Dubai Land Department to avoid late fees.`);
         charge.lastPaymentDate = charge.nextDueDate;
         charge.nextDueDate = (0, data_1.addMonths)(charge.nextDueDate, 3);

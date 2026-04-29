@@ -11,7 +11,9 @@ exports.serviceChargeEmail = serviceChargeEmail;
 const nodemailer_1 = __importDefault(require("nodemailer"));
 function createTransporter() {
     return nodemailer_1.default.createTransport({
-        service: 'gmail',
+        host: 'smtp.gmail.com',
+        port: 587,
+        secure: false,
         auth: {
             user: process.env.GMAIL_USER,
             pass: process.env.GMAIL_PASS,
@@ -24,13 +26,20 @@ async function sendEmail(to, subject, html) {
         return;
     }
     const transporter = createTransporter();
-    await transporter.sendMail({
-        from: `"Dubai Property Manager" <${process.env.GMAIL_USER}>`,
-        to,
-        subject,
-        html,
-    });
-    console.log(`[EMAIL SENT] To: ${to} | ${subject}`);
+    try {
+        const info = await transporter.sendMail({
+            from: `"Dubai Property Manager" <${process.env.GMAIL_USER}>`,
+            to,
+            subject,
+            html,
+        });
+        console.log(`[EMAIL SENT] To: ${to} | ${subject} | messageId: ${info.messageId}`);
+    }
+    catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[EMAIL ERROR] To: ${to} | ${subject} | ${msg}`, err);
+        throw err;
+    }
 }
 function chequeEmail(cheque, days) {
     const urgency = days <= 7 ? '#c0392b' : days <= 14 ? '#e67e22' : '#2980b9';

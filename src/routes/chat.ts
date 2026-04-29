@@ -1,8 +1,41 @@
 import { Router, Request, Response } from 'express';
 import Anthropic from '@anthropic-ai/sdk';
 import { allData, daysUntil } from '../utils/data';
+import { sendEmail } from '../services/email';
 
 const router = Router();
+
+// ─── Tool: send_email ─────────────────────────────────────────────────────────
+
+async function toolSendEmail(to: string, subject: string, body: string): Promise<string> {
+  try {
+    await sendEmail(to, subject, body);
+    console.log(`EMAIL SENT TO: ${to}`);
+    return `✅ Email sent to ${to}`;
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`EMAIL ERROR: ${msg}`);
+    return `❌ Email failed: ${msg}`;
+  }
+}
+
+const TOOLS: Anthropic.Tool[] = [
+  {
+    name: 'send_email',
+    description: 'Send an email to a recipient. Use this when the landlord asks to send an email to a tenant or any person. Write a professional bilingual (English + Arabic) HTML body.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        to: { type: 'string', description: 'Recipient email address' },
+        subject: { type: 'string', description: 'Email subject line' },
+        body: { type: 'string', description: 'Full HTML email body' },
+      },
+      required: ['to', 'subject', 'body'],
+    },
+  },
+];
+
+// ─── Route ────────────────────────────────────────────────────────────────────
 
 router.post('/', async (req: Request, res: Response) => {
   try {
@@ -16,7 +49,6 @@ router.post('/', async (req: Request, res: Response) => {
     const today = new Date().toISOString().split('T')[0];
     const data = allData();
 
-    // Annotate cheques and contracts with daysUntil for easier reasoning
     const annotatedCheques = data.cheques.map(c => ({
       ...c,
       daysUntilDue: daysUntil(c.chequeDate),
@@ -57,17 +89,68 @@ RULES:
 - Format currency as AED.
 - Reference tenant names, unit numbers, and dates clearly.
 - For rent increase questions, cite Dubai RERA Decree 43/2013 rules.
-- Today is ${today}.`;
+- Today is ${today}.
+- EMAIL: When asked to send an email, you MUST call the send_email tool with the recipient's actual email address from the tenant data. Never just say you will send it — call the tool.`;
 
-    const response = await client.messages.create({
+    const messages: Anthropic.MessageParam[] = [{ role: 'user', content: message }];
+
+    // First call — Claude may request tool use
+    const firstResponse = await client.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 1024,
       system: systemPrompt,
-      messages: [{ role: 'user', content: message }],
+      tools: TOOLS,
+      messages,
     });
 
-    const answer = response.content[0].type === 'text' ? response.content[0].text : '';
-    res.json({ answer, model: response.model, usage: response.usage });
+    // No tool call — return text directly
+    if (firstResponse.stop_reason !== 'tool_use') {
+      const answer = firstResponse.content[0].type === 'text' ? firstResponse.content[0].text : '';
+      res.json({ answer, model: firstResponse.model, usage: firstResponse.usage });
+      return;
+    }
+
+    // Execute tool calls
+    const toolResults: Anthropic.ToolResultBlockParam[] = [];
+
+    for (const block of firstResponse.content) {
+      if (block.type !== 'tool_use') continue;
+      const input = block.input as Record<string, unknown>;
+      let result: string;
+
+      if (block.name === 'send_email') {
+        result = await toolSendEmail(
+          input.to as string,
+          input.subject as string,
+          input.body as string,
+        );
+      } else {
+        result = `Unknown tool: ${block.name}`;
+      }
+
+      console.log(`[CHAT TOOL] ${block.name}(to=${input.to ?? ''}) → ${result}`);
+      toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: result });
+    }
+
+    // Second call with tool results — Claude confirms the outcome
+    const secondResponse = await client.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 512,
+      system: systemPrompt,
+      tools: TOOLS,
+      messages: [
+        ...messages,
+        { role: 'assistant', content: firstResponse.content },
+        { role: 'user', content: toolResults },
+      ],
+    });
+
+    const textBlock = secondResponse.content.find(b => b.type === 'text');
+    const answer = textBlock?.type === 'text'
+      ? textBlock.text
+      : toolResults.map(r => r.content).join('\n');
+
+    res.json({ answer, model: secondResponse.model, usage: secondResponse.usage });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error('[Chat error]', msg);

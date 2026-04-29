@@ -133,8 +133,10 @@ async function toolSendRenewalNotice(tenantName: string, increasePercent: number
 
   try {
     await sendEmail(tenant.email, 'Contract Renewal Notice | إشعار تجديد العقد', html);
+    console.log(`EMAIL SENT TO: ${tenant.email}`);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
+    console.error(`EMAIL ERROR: ${msg}`);
     return `❌ Email failed: ${msg}`;
   }
   return `✅ Renewal notice emailed to ${tenant.name} (${tenant.email})`;
@@ -183,8 +185,10 @@ async function toolSendReminderToTenant(tenantName: string): Promise<string> {
 
   try {
     await sendEmail(tenant.email, 'Contract Renewal Reminder | تذكير بتجديد العقد', html);
+    console.log(`EMAIL SENT TO: ${tenant.email}`);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
+    console.error(`EMAIL ERROR: ${msg}`);
     return `❌ Email failed: ${msg}`;
   }
   return `✅ Reminder emailed to ${tenant.name} (${tenant.email})`;
@@ -198,8 +202,10 @@ async function toolSendEmailToTenant(tenantName: string, subject: string, bodyHt
 
   try {
     await sendEmail(tenant.email, subject, bodyHtml);
+    console.log(`EMAIL SENT TO: ${tenant.email}`);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
+    console.error(`EMAIL ERROR: ${msg}`);
     return `❌ Email failed: ${msg}`;
   }
   return `✅ Email sent to ${tenant.name} (${tenant.email})`;
@@ -210,6 +216,18 @@ function toolUpdateReminderThreshold(days: number): string {
   cfg.renewalReminderDays = days;
   saveConfig(cfg);
   return `✅ Reminder threshold set to ${days} days before contract end.`;
+}
+
+async function toolSendEmail(to: string, subject: string, body: string): Promise<string> {
+  try {
+    await sendEmail(to, subject, body);
+    console.log(`EMAIL SENT TO: ${to}`);
+    return `✅ Email sent to ${to}`;
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`EMAIL ERROR: ${msg}`);
+    return `❌ Email failed: ${msg}`;
+  }
 }
 
 function toolCheckRERA(tenantName: string, marketRent?: number): string {
@@ -318,6 +336,19 @@ const TOOLS: Anthropic.Tool[] = [
         marketRent: { type: 'number', description: 'Current market rent per year in AED (optional)' },
       },
       required: ['tenantName'],
+    },
+  },
+  {
+    name: 'send_email',
+    description: 'Send an email directly to any email address. Use this when the landlord provides a specific email address or when the tenant email is already known. Prefer send_email_to_tenant when only a tenant name is given.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        to: { type: 'string', description: 'Recipient email address' },
+        subject: { type: 'string', description: 'Email subject line' },
+        body: { type: 'string', description: 'Full HTML email body' },
+      },
+      required: ['to', 'subject', 'body'],
     },
   },
 ];
@@ -535,11 +566,18 @@ EMAIL: When the landlord asks to send an email to a tenant (in any language), us
             input.marketRent as number | undefined,
           );
           break;
+        case 'send_email':
+          result = await toolSendEmail(
+            input.to as string,
+            input.subject as string,
+            input.body as string,
+          );
+          break;
         default:
           result = `Unknown tool: ${block.name}`;
       }
 
-      console.log(`[WHATSAPP TOOL] ${block.name}(${JSON.stringify(input)}) → ${result.slice(0, 80)}`);
+      console.log(`[WHATSAPP TOOL] ${block.name}(${JSON.stringify(input).slice(0, 60)}) → ${result.slice(0, 80)}`);
       toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: result });
     }
 
