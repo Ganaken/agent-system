@@ -1,10 +1,10 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import Anthropic from '@anthropic-ai/sdk';
 import { allData, daysUntil } from '../utils/data';
 
 const router = Router();
 
-router.post('/', async (req, res) => {
+router.post('/', async (req: Request, res: Response) => {
   try {
     const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
     const { message } = req.body as { message?: string };

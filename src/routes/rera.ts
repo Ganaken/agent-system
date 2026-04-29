@@ -1,10 +1,10 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import { calculateRentIncrease, getRERAInfo } from '../services/rera';
 
 const router = Router();
 
 // POST /api/rera/check — calculate max allowed rent increase
-router.post('/check', async (req, res) => {
+router.post('/check', async (req: Request, res: Response) => {
   try {
     const { currentRent, marketRent, area } = req.body as {
       currentRent?: number;

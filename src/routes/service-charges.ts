@@ -1,16 +1,16 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 import { getServiceCharges, saveServiceCharges, daysUntil } from '../utils/data';
 import type { ServiceCharge } from '../types';
 
 const router = Router();
 
-router.get('/', (_req, res) => {
+router.get('/', (_req: Request, res: Response) => {
   res.json(getServiceCharges());
 });
 
 // GET /api/service-charges/due — service charges due within 30 days (or overdue)
-router.get('/due', (_req, res) => {
+router.get('/due', (_req: Request, res: Response) => {
   const charges = getServiceCharges();
   const due = charges
     .filter(c => daysUntil(c.nextDueDate) <= 30)
@@ -19,7 +19,7 @@ router.get('/due', (_req, res) => {
   res.json(due);
 });
 
-router.post('/', (req, res) => {
+router.post('/', (req: Request, res: Response) => {
   const charges = getServiceCharges();
   const charge: ServiceCharge = {
     id: randomUUID(),
@@ -31,7 +31,7 @@ router.post('/', (req, res) => {
   res.status(201).json(charge);
 });
 
-router.patch('/:id', (req, res) => {
+router.patch('/:id', (req: Request, res: Response) => {
   const charges = getServiceCharges();
   const charge = charges.find(c => c.id === req.params['id']);
   if (!charge) { res.status(404).json({ error: 'Not found' }); return; }
@@ -40,7 +40,7 @@ router.patch('/:id', (req, res) => {
   res.json(charge);
 });
 
-router.delete('/:id', (req, res) => {
+router.delete('/:id', (req: Request, res: Response) => {
   const charges = getServiceCharges();
   const idx = charges.findIndex(c => c.id === req.params['id']);
   if (idx === -1) { res.status(404).json({ error: 'Not found' }); return; }

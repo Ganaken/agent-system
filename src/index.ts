@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import express from 'express';
+import express, { Request, Response } from 'express';
 import { ensureDataDir } from './utils/data';
 import { startScheduler } from './services/scheduler';
 import tenantsRouter from './routes/tenants';
@@ -25,7 +25,7 @@ app.use('/api/chat', chatRouter);
 app.use('/api/rera', reraRouter);
 
 // Health check + route listing
-app.get('/health', (_req, res) => {
+app.get('/health', (_req: Request, res: Response) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),

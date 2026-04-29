@@ -1,16 +1,16 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 import { getCheques, saveCheques, daysUntil } from '../utils/data';
 import type { Cheque } from '../types';
 
 const router = Router();
 
-router.get('/', (_req, res) => {
+router.get('/', (_req: Request, res: Response) => {
   res.json(getCheques());
 });
 
 // GET /api/cheques/due — cheques due in next 30 days
-router.get('/due', (_req, res) => {
+router.get('/due', (_req: Request, res: Response) => {
   const cheques = getCheques();
   const due = cheques
     .filter(c => c.status === 'pending' && daysUntil(c.chequeDate) >= 0 && daysUntil(c.chequeDate) <= 30)
@@ -19,7 +19,7 @@ router.get('/due', (_req, res) => {
   res.json(due);
 });
 
-router.post('/', (req, res) => {
+router.post('/', (req: Request, res: Response) => {
   const cheques = getCheques();
   const cheque: Cheque = {
     id: randomUUID(),
@@ -31,7 +31,7 @@ router.post('/', (req, res) => {
   res.status(201).json(cheque);
 });
 
-router.patch('/:id/status', (req, res) => {
+router.patch('/:id/status', (req: Request, res: Response) => {
   const cheques = getCheques();
   const cheque = cheques.find(c => c.id === req.params['id']);
   if (!cheque) { res.status(404).json({ error: 'Not found' }); return; }
@@ -40,7 +40,7 @@ router.patch('/:id/status', (req, res) => {
   res.json(cheque);
 });
 
-router.delete('/:id', (req, res) => {
+router.delete('/:id', (req: Request, res: Response) => {
   const cheques = getCheques();
   const idx = cheques.findIndex(c => c.id === req.params['id']);
   if (idx === -1) { res.status(404).json({ error: 'Not found' }); return; }

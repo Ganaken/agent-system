@@ -18,7 +18,8 @@
       "PowerShell(curl.exe -s http://localhost:3000/api/contracts/expiring)",
       "PowerShell(curl.exe -s http://localhost:3000/api/service-charges/due)",
       "PowerShell(curl.exe -s -X POST http://localhost:3000/api/chat -H \"Content-Type: application/json\" -d $body)",
-      "PowerShell($body = '{\"message\":\"Which cheques are due this month?\"}')"
+      "PowerShell($body = '{\"message\":\"Which cheques are due this month?\"}')",
+      "Bash(npx tsc *)"
     ]
   }
 }
