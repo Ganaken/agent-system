@@ -24,8 +24,6 @@ export interface Cheque {
   unit: string;
   propertyId: string;
   amount: number;
-  chequeNumber: string;
-  bankName: string;
   chequeDate: string;
   status: 'pending' | 'deposited' | 'bounced';
   reminderSent30?: boolean;

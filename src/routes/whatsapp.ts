@@ -3,6 +3,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import fs from 'fs';
 import path from 'path';
 import { allData, daysUntil, getTenants, getContracts, getProperties } from '../utils/data';
+import { loadHistory, saveHistory, cleanExpiredConversations } from '../utils/conversation';
 import { sendToNumber } from '../services/whatsapp';
 import { calculateRentIncrease } from '../services/rera';
 
@@ -251,6 +252,8 @@ router.post('/incoming', async (req: Request, res: Response) => {
   }
 
   try {
+    cleanExpiredConversations();
+    const history = loadHistory(from);
     const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
     const today = new Date().toISOString().split('T')[0];
     const data = allData();
@@ -262,7 +265,12 @@ router.post('/incoming', async (req: Request, res: Response) => {
       formattedEndDate: formatDate(c.endDate),
     }));
     const annotatedCheques = data.cheques.map(c => ({
-      ...c,
+      id: c.id,
+      tenantName: c.tenantName,
+      unit: c.unit,
+      amount: c.amount,
+      chequeDate: c.chequeDate,
+      status: c.status,
       daysUntilDue: daysUntil(c.chequeDate),
     }));
     const annotatedCharges = data.serviceCharges.map(c => ({
@@ -309,9 +317,9 @@ Status rules:
   otherwise             → ✅ All good
 
 When showing cheques use:
-💳 [Tenant] — Unit [X]
-📅 Due: [DD Mon YYYY] ([N] days)
-💰 AED [amount] | [Bank] | Cheque [number]
+🧾 [Tenant Name] - [Unit]
+💰 AED [Amount]
+📅 Due: [DD Mon YYYY] ([X] days)
 [🚨 Overdue | ⚠️ Due soon | ✅ OK]
 
 LANGUAGE: Detect the user's language and reply entirely in that language.
@@ -324,13 +332,14 @@ ACTIONS: Use the provided tools for any send/remind/update commands.`;
       max_tokens: 1024,
       system: systemPrompt,
       tools: TOOLS,
-      messages: [{ role: 'user', content: userMessage }],
+      messages: [...history, { role: 'user', content: userMessage }],
     });
 
     // If no tool call, return the text directly
     if (firstResponse.stop_reason !== 'tool_use') {
       const textBlock = firstResponse.content.find(b => b.type === 'text');
       const answer = textBlock?.type === 'text' ? textBlock.text : 'Sorry, I could not generate a response.';
+      saveHistory(from, userMessage, answer);
       console.log(`[WHATSAPP BOT] From: ${from} | Q: ${userMessage.slice(0, 60)} | A: ${answer.slice(0, 60)}`);
       res.send(twiml(answer));
       return;
@@ -378,6 +387,7 @@ ACTIONS: Use the provided tools for any send/remind/update commands.`;
       system: systemPrompt,
       tools: TOOLS,
       messages: [
+        ...history,
         { role: 'user', content: userMessage },
         { role: 'assistant', content: firstResponse.content },
         { role: 'user', content: toolResults },
@@ -389,6 +399,7 @@ ACTIONS: Use the provided tools for any send/remind/update commands.`;
       ? textBlock.text
       : toolResults.map(r => r.content).join('\n');
 
+    saveHistory(from, userMessage, answer);
     console.log(`[WHATSAPP BOT] From: ${from} | Q: ${userMessage.slice(0, 60)} | A: ${answer.slice(0, 60)}`);
     res.send(twiml(answer));
   } catch (err: unknown) {

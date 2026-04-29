@@ -22,7 +22,7 @@ export async function checkChequeReminders(): Promise<void> {
       const subject = `🚨 URGENT: Cheque due in ${days} days — ${cheque.tenantName} Unit ${cheque.unit}`;
       await sendEmail(MY_EMAIL(), subject, chequeEmail(cheque, days));
       await sendAlert(
-        `🚨 URGENT: Cheque due in ${days} days\nTenant: ${cheque.tenantName} | Unit: ${cheque.unit}\nAmount: AED ${cheque.amount.toLocaleString()} | Date: ${cheque.chequeDate}\nCheque: ${cheque.chequeNumber} | Bank: ${cheque.bankName}`
+        `🚨 URGENT: Cheque due in ${days} days\nTenant: ${cheque.tenantName} | Unit: ${cheque.unit}\nAmount: AED ${cheque.amount.toLocaleString()} | Date: ${cheque.chequeDate}`
       );
       cheque.reminderSent7 = true;
       cheque.reminderSent14 = true;
@@ -32,7 +32,7 @@ export async function checkChequeReminders(): Promise<void> {
       const subject = `⚠️ Cheque due in ${days} days — ${cheque.tenantName} Unit ${cheque.unit}`;
       await sendEmail(MY_EMAIL(), subject, chequeEmail(cheque, days));
       await sendAlert(
-        `⚠️ Cheque due in ${days} days\nTenant: ${cheque.tenantName} | Unit: ${cheque.unit}\nAmount: AED ${cheque.amount.toLocaleString()} | Date: ${cheque.chequeDate}\nCheque: ${cheque.chequeNumber} | Bank: ${cheque.bankName}`
+        `⚠️ Cheque due in ${days} days\nTenant: ${cheque.tenantName} | Unit: ${cheque.unit}\nAmount: AED ${cheque.amount.toLocaleString()} | Date: ${cheque.chequeDate}`
       );
       cheque.reminderSent14 = true;
       cheque.reminderSent30 = true;
@@ -41,7 +41,7 @@ export async function checkChequeReminders(): Promise<void> {
       const subject = `📅 Cheque due in ${days} days — ${cheque.tenantName} Unit ${cheque.unit}`;
       await sendEmail(MY_EMAIL(), subject, chequeEmail(cheque, days));
       await sendAlert(
-        `📅 Cheque due in ${days} days\nTenant: ${cheque.tenantName} | Unit: ${cheque.unit}\nAmount: AED ${cheque.amount.toLocaleString()} | Date: ${cheque.chequeDate}\nCheque: ${cheque.chequeNumber} | Bank: ${cheque.bankName}`
+        `📅 Cheque due in ${days} days\nTenant: ${cheque.tenantName} | Unit: ${cheque.unit}\nAmount: AED ${cheque.amount.toLocaleString()} | Date: ${cheque.chequeDate}`
       );
       cheque.reminderSent30 = true;
       changed = true;
