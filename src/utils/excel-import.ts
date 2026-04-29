@@ -45,11 +45,16 @@ export interface ImportResult {
   errors: string[];
 }
 
-// Case-insensitive, whitespace-tolerant field lookup
+// Normalize a key/field by lowercasing and stripping ALL non-alphanumeric characters
+function normalize(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+// Case-insensitive, punctuation-tolerant field lookup
 function findVal(row: Record<string, unknown>, field: string): unknown {
-  const needle = field.toLowerCase().replace(/[\s_]/g, '');
+  const needle = normalize(field);
   for (const key of Object.keys(row)) {
-    if (key.toLowerCase().replace(/[\s_]/g, '') === needle) return row[key];
+    if (normalize(key) === needle) return row[key];
   }
   return undefined;
 }
@@ -72,14 +77,21 @@ function dateStr(row: Record<string, unknown>, field: string): string {
   const val = findVal(row, field);
   if (val instanceof Date) return val.toISOString().split('T')[0];
   if (typeof val === 'number' && val > 0) {
-    // Excel stores dates as days since 1900-01-01 (25569 days before Unix epoch)
+    // Excel serial date: days since 1900-01-01 (25569 days before Unix epoch)
     const ms = (val - 25569) * 86400 * 1000;
     return new Date(ms).toISOString().split('T')[0];
   }
   if (typeof val === 'string' && val.trim()) {
-    const d = new Date(val.trim());
+    const s = val.trim();
+    // DD/MM/YYYY
+    const dmy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (dmy) {
+      const [, dd, mm, yyyy] = dmy;
+      return `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
+    }
+    const d = new Date(s);
     if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
-    return val.trim();
+    return s;
   }
   return '';
 }
@@ -104,89 +116,109 @@ export function importExcelBuffer(buffer: Buffer): ImportResult {
 
   const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: true });
 
+  console.log('[EXCEL IMPORT] Sheets found:', workbook.SheetNames);
+
+  for (const sheetName of workbook.SheetNames) {
+    const rows = getRows(workbook, sheetName);
+    console.log(`[EXCEL IMPORT] Sheet "${sheetName}": ${rows.length} non-empty rows`);
+    if (rows.length > 0) {
+      console.log(`[EXCEL IMPORT] Sheet "${sheetName}" columns:`, Object.keys(rows[0]));
+      console.log(`[EXCEL IMPORT] Sheet "${sheetName}" first row:`, JSON.stringify(rows[0]));
+    }
+  }
+
   // ── Landlords ──────────────────────────────────────────────────────────────
+  // Expected columns: Full Name, Relationship, Email Address, WhatsApp Number, Emirates ID / Passport No.
   const landlordSheet = resolveSheetName(workbook, 'Landlords');
   if (landlordSheet) {
     const rows = getRows(workbook, landlordSheet);
     const data: Landlord[] = rows
-      .filter(r => str(r, 'name'))
+      .filter(r => str(r, 'Full Name'))
       .map(r => ({
         id: uuidv4(),
-        name: str(r, 'name'),
-        relationship: str(r, 'relationship'),
-        email: str(r, 'email'),
-        whatsapp: str(r, 'whatsapp'),
-        emiratesId: str(r, 'emiratesId'),
+        name: str(r, 'Full Name'),
+        relationship: str(r, 'Relationship'),
+        email: str(r, 'Email Address'),
+        whatsapp: str(r, 'WhatsApp Number'),
+        emiratesId: str(r, 'Emirates ID / Passport No.'),
       }));
     writeJSON('landlords.json', data);
     landlordCount = data.length;
+    console.log(`[EXCEL IMPORT] Landlords imported: ${landlordCount}`);
   } else {
     errors.push('Sheet "Landlords" not found');
   }
 
   // ── Properties ─────────────────────────────────────────────────────────────
+  // Expected columns: Building Name, Unit Number, Area / Location, Type, Landlord Name, Service Charge (AED/year), Notes
   const propertySheet = resolveSheetName(workbook, 'Properties');
   if (propertySheet) {
     const rows = getRows(workbook, propertySheet);
     const data: ImportedProperty[] = rows
-      .filter(r => str(r, 'buildingName') || str(r, 'unitNumber'))
+      .filter(r => str(r, 'Building Name') || str(r, 'Unit Number'))
       .map(r => ({
         id: uuidv4(),
-        buildingName: str(r, 'buildingName'),
-        unitNumber: str(r, 'unitNumber'),
-        area: str(r, 'area'),
-        type: str(r, 'type'),
-        landlordName: str(r, 'landlordName'),
-        serviceCharge: num(r, 'serviceCharge'),
-        notes: str(r, 'notes'),
+        buildingName: str(r, 'Building Name'),
+        unitNumber: str(r, 'Unit Number'),
+        area: str(r, 'Area / Location'),
+        type: str(r, 'Type'),
+        landlordName: str(r, 'Landlord Name'),
+        serviceCharge: num(r, 'Service Charge (AED/year)'),
+        notes: str(r, 'Notes'),
       }));
     writeJSON('properties.json', data);
     propertyCount = data.length;
+    console.log(`[EXCEL IMPORT] Properties imported: ${propertyCount}`);
   } else {
     errors.push('Sheet "Properties" not found');
   }
 
   // ── Tenants ────────────────────────────────────────────────────────────────
+  // Expected columns: Full Name, Email Address, WhatsApp Number, Property / Unit, Landlord Name,
+  //   Contract Start (DD/MM/YYYY), Contract End (DD/MM/YYYY), Annual Rent (AED), Number of Cheques, Emirates ID, Notes
   const tenantSheet = resolveSheetName(workbook, 'Tenants');
   if (tenantSheet) {
     const rows = getRows(workbook, tenantSheet);
     const data: ImportedTenant[] = rows
-      .filter(r => str(r, 'name'))
+      .filter(r => str(r, 'Full Name'))
       .map(r => ({
         id: uuidv4(),
-        name: str(r, 'name'),
-        email: str(r, 'email'),
-        whatsapp: str(r, 'whatsapp'),
-        property: str(r, 'property'),
-        landlordName: str(r, 'landlordName'),
-        contractStart: dateStr(r, 'contractStart'),
-        contractEnd: dateStr(r, 'contractEnd'),
-        annualRent: num(r, 'annualRent'),
-        numberOfCheques: Math.round(num(r, 'numberOfCheques')),
-        emiratesId: str(r, 'emiratesId'),
-        notes: str(r, 'notes'),
+        name: str(r, 'Full Name'),
+        email: str(r, 'Email Address'),
+        whatsapp: str(r, 'WhatsApp Number'),
+        property: str(r, 'Property / Unit'),
+        landlordName: str(r, 'Landlord Name'),
+        contractStart: dateStr(r, 'Contract Start (DD/MM/YYYY)'),
+        contractEnd: dateStr(r, 'Contract End (DD/MM/YYYY)'),
+        annualRent: num(r, 'Annual Rent (AED)'),
+        numberOfCheques: Math.round(num(r, 'Number of Cheques')),
+        emiratesId: str(r, 'Emirates ID'),
+        notes: str(r, 'Notes'),
       }));
     writeJSON('tenants.json', data);
     tenantCount = data.length;
+    console.log(`[EXCEL IMPORT] Tenants imported: ${tenantCount}`);
   } else {
     errors.push('Sheet "Tenants" not found');
   }
 
   // ── Cheques ────────────────────────────────────────────────────────────────
+  // Expected columns: #, Tenant Name, Property / Unit, Amount (AED), Due Date (DD/MM/YYYY)
   const chequeSheet = resolveSheetName(workbook, 'Cheques');
   if (chequeSheet) {
     const rows = getRows(workbook, chequeSheet);
     const data: ImportedCheque[] = rows
-      .filter(r => str(r, 'tenantName') && num(r, 'amount') > 0)
+      .filter(r => str(r, 'Tenant Name') && num(r, 'Amount (AED)') > 0)
       .map(r => ({
         id: uuidv4(),
-        tenantName: str(r, 'tenantName'),
-        property: str(r, 'property'),
-        amount: num(r, 'amount'),
-        dueDate: dateStr(r, 'dueDate'),
+        tenantName: str(r, 'Tenant Name'),
+        property: str(r, 'Property / Unit'),
+        amount: num(r, 'Amount (AED)'),
+        dueDate: dateStr(r, 'Due Date (DD/MM/YYYY)'),
       }));
     writeJSON('cheques.json', data);
     chequeCount = data.length;
+    console.log(`[EXCEL IMPORT] Cheques imported: ${chequeCount}`);
   } else {
     errors.push('Sheet "Cheques" not found');
   }

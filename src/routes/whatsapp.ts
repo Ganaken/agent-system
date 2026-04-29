@@ -287,11 +287,15 @@ router.post('/incoming', async (req: Request, res: Response) => {
   }
 
   // ── Excel file upload ──────────────────────────────────────────────────────
+  console.log(`[WHATSAPP INCOMING] From: ${from} | MediaUrl0: ${mediaUrl ?? 'none'} | MediaContentType0: ${mediaType || 'none'}`);
+
   const isExcel =
     mediaType.includes('spreadsheetml') ||
     mediaType.includes('ms-excel') ||
     mediaType.includes('xlsx') ||
-    mediaType.includes('xls');
+    mediaType.includes('xls') ||
+    (!!mediaUrl && /\.xlsx?(\?|$)/i.test(mediaUrl)) ||
+    mediaType === 'application/octet-stream';
 
   if (mediaUrl && isExcel) {
     try {
