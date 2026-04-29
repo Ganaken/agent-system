@@ -1,1 +1,1 @@
-web: node -r ts-node/register src/index.ts
+web: node dist/index.js

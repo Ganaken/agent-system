@@ -4,8 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "node -r ts-node/register src/index.ts",
-    "build": "echo no build"
+    "build": "npm install -g typescript && tsc --skipLibCheck",
+    "start": "node dist/index.js"
   },
   "keywords": [],
   "author": "",
