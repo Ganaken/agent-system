@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "ts-node src/index.ts",
-    "build": "tsc",
+    "build": "npx tsc",
     "start:prod": "node dist/index.js"
   },
   "keywords": [],
