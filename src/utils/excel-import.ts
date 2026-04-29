@@ -96,11 +96,40 @@ function dateStr(row: Record<string, unknown>, field: string): string {
   return '';
 }
 
+// Reads a vertically-structured sheet:
+//   Row 1  = title (skip)
+//   Row 2  = headers: "Field", "Record 1", "Record 2", ...
+//   Row 3+ = data: col A = field name, col B/C/D... = values per record
+// Returns one object per record column, with field names as keys.
 function getRows(workbook: XLSX.WorkBook, sheetName: string): Record<string, unknown>[] {
   const sheet = workbook.Sheets[sheetName];
   if (!sheet) return [];
-  const rows = XLSX.utils.sheet_to_json(sheet) as Record<string, unknown>[];
-  return rows.filter(r => Object.values(r).some(v => v !== null && v !== undefined && v !== ''));
+
+  const raw = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' }) as unknown[][];
+
+  // Need at least title row + header row + 1 data row
+  if (raw.length < 3) return [];
+
+  // raw[0] = title row (skip), raw[1] = header row, raw[2+] = data rows
+  const dataRows = raw.slice(2);
+
+  // Determine number of record columns from the widest data row
+  const numCols = Math.max(...dataRows.map(r => (r as unknown[]).length));
+
+  const records: Record<string, unknown>[] = [];
+
+  for (let col = 1; col < numCols; col++) {
+    const record: Record<string, unknown> = {};
+    for (const row of dataRows) {
+      const fieldName = String((row as unknown[])[0] ?? '').trim();
+      if (fieldName) {
+        record[fieldName] = (row as unknown[])[col] ?? '';
+      }
+    }
+    records.push(record);
+  }
+
+  return records;
 }
 
 function resolveSheetName(workbook: XLSX.WorkBook, target: string): string | undefined {
@@ -120,10 +149,10 @@ export function importExcelBuffer(buffer: Buffer): ImportResult {
 
   for (const sheetName of workbook.SheetNames) {
     const rows = getRows(workbook, sheetName);
-    console.log(`[EXCEL IMPORT] Sheet "${sheetName}": ${rows.length} non-empty rows`);
+    console.log(`[EXCEL IMPORT] Sheet "${sheetName}": ${rows.length} record columns`);
     if (rows.length > 0) {
-      console.log(`[EXCEL IMPORT] Sheet "${sheetName}" columns:`, Object.keys(rows[0]));
-      console.log(`[EXCEL IMPORT] Sheet "${sheetName}" first row:`, JSON.stringify(rows[0]));
+      console.log(`[EXCEL IMPORT] Sheet "${sheetName}" fields:`, Object.keys(rows[0]));
+      console.log(`[EXCEL IMPORT] Sheet "${sheetName}" first record:`, JSON.stringify(rows[0]));
     }
   }
 
