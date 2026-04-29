@@ -613,13 +613,13 @@ EMAIL: When the landlord asks to send an email to a tenant (in any language), us
 // ─── Test email ───────────────────────────────────────────────────────────────
 
 router.get('/test-email', async (_req: Request, res: Response) => {
-  const to = process.env.GMAIL_USER;
+  const to = process.env.MY_EMAIL;
   if (!to) {
-    res.status(500).json({ error: 'GMAIL_USER env var is not set' });
+    res.status(500).json({ error: 'MY_EMAIL env var is not set' });
     return;
   }
   try {
-    await sendEmail(to, 'Test Email — Dubai Landlord System', '<p>This is a test email from the Dubai Landlord Management System.</p>');
+    await sendEmail(to, 'Test Email — Dubai Landlord System', '<p>This is a test email from the Dubai Landlord Management System.</p>', 'test');
     res.json({ success: true, to });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);

@@ -1,37 +1,21 @@
-import nodemailer from 'nodemailer';
 import type { Cheque, Contract, ServiceCharge } from '../types';
 
-function createTransporter() {
-  return nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 465,
-    secure: true,
-    auth: {
-      user: process.env.GMAIL_USER,
-      pass: process.env.GMAIL_PASS,
-    },
-  });
-}
-
-export async function sendEmail(to: string, subject: string, html: string): Promise<void> {
-  if (!process.env.GMAIL_USER || !process.env.GMAIL_PASS) {
-    console.log(`[EMAIL SKIPPED — no Gmail credentials] To: ${to} | ${subject}`);
+export async function sendEmail(to: string, subject: string, html: string, type = 'general'): Promise<void> {
+  const webhookUrl = process.env.N8N_EMAIL_WEBHOOK_URL;
+  if (!webhookUrl) {
+    console.log(`[EMAIL SKIPPED — no N8N_EMAIL_WEBHOOK_URL] To: ${to} | ${subject}`);
     return;
   }
-  const transporter = createTransporter();
-  try {
-    const info = await transporter.sendMail({
-      from: `"Dubai Property Manager" <${process.env.GMAIL_USER}>`,
-      to,
-      subject,
-      html,
-    });
-    console.log(`[EMAIL SENT] To: ${to} | ${subject} | messageId: ${info.messageId}`);
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[EMAIL ERROR] To: ${to} | ${subject} | ${msg}`, err);
-    throw err;
+  const res = await fetch(webhookUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ to, subject, html, type }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`n8n webhook error ${res.status}: ${text}`);
   }
+  console.log(`[EMAIL SENT] To: ${to} | ${subject} | type: ${type}`);
 }
 
 export function chequeEmail(cheque: Cheque, days: number): string {
