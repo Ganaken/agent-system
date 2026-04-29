@@ -55,3 +55,12 @@ export interface ServiceCharge {
   nextDueDate: string;
   frequency: 'quarterly' | 'annual';
 }
+
+export interface Landlord {
+  id: string;
+  name: string;
+  relationship: string;
+  email: string;
+  whatsapp: string;
+  emiratesId: string;
+}

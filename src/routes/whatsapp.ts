@@ -1,11 +1,14 @@
 import { Router, Request, Response } from 'express';
 import Anthropic from '@anthropic-ai/sdk';
+import https from 'https';
+import http from 'http';
 import fs from 'fs';
 import path from 'path';
 import { allData, daysUntil, getTenants, getContracts, getProperties } from '../utils/data';
 import { loadHistory, saveHistory, cleanExpiredConversations } from '../utils/conversation';
 import { sendToNumber } from '../services/whatsapp';
 import { calculateRentIncrease } from '../services/rera';
+import { importExcelBuffer } from '../utils/excel-import';
 
 const router = Router();
 
@@ -52,6 +55,36 @@ function normalizeWhatsApp(phone: string): string {
   if (digits.startsWith('971')) return `whatsapp:+${digits}`;
   if (digits.startsWith('0')) return `whatsapp:+971${digits.slice(1)}`;
   return `whatsapp:+971${digits}`;
+}
+
+// ─── Media download ───────────────────────────────────────────────────────────
+
+function downloadTwilioMedia(mediaUrl: string): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const accountSid = process.env.TWILIO_ACCOUNT_SID ?? '';
+    const authToken = process.env.TWILIO_AUTH_TOKEN ?? '';
+    const auth = Buffer.from(`${accountSid}:${authToken}`).toString('base64');
+
+    const parsed = new URL(mediaUrl);
+    const lib = parsed.protocol === 'https:' ? https : http;
+
+    const req = lib.get(mediaUrl, { headers: { Authorization: `Basic ${auth}` } }, res => {
+      // Follow up to 3 redirects
+      if ((res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 307) && res.headers.location) {
+        downloadTwilioMedia(res.headers.location).then(resolve).catch(reject);
+        return;
+      }
+      if (res.statusCode && res.statusCode >= 400) {
+        reject(new Error(`HTTP ${res.statusCode} downloading media`));
+        return;
+      }
+      const chunks: Buffer[] = [];
+      res.on('data', (chunk: Buffer) => chunks.push(chunk));
+      res.on('end', () => resolve(Buffer.concat(chunks)));
+      res.on('error', reject);
+    });
+    req.on('error', reject);
+  });
 }
 
 // ─── Tool implementations ─────────────────────────────────────────────────────
@@ -243,10 +276,68 @@ router.post('/incoming', async (req: Request, res: Response) => {
   res.setHeader('Content-Type', 'text/xml');
 
   const body = req.body as Record<string, string>;
-  const userMessage = body['Body']?.trim();
+  const userMessage = (body['Body'] ?? '').trim();
   const from = body['From'];
+  const mediaUrl = body['MediaUrl0'];
+  const mediaType = (body['MediaContentType0'] ?? '').toLowerCase();
 
-  if (!userMessage || !from) {
+  if (!from) {
+    res.send(twiml('Sorry, I could not understand your message.'));
+    return;
+  }
+
+  // ── Excel file upload ──────────────────────────────────────────────────────
+  const isExcel =
+    mediaType.includes('spreadsheetml') ||
+    mediaType.includes('ms-excel') ||
+    mediaType.includes('xlsx') ||
+    mediaType.includes('xls');
+
+  if (mediaUrl && isExcel) {
+    try {
+      console.log(`[EXCEL IMPORT] Downloading from ${mediaUrl}`);
+      const buffer = await downloadTwilioMedia(mediaUrl);
+      const result = importExcelBuffer(buffer);
+
+      const totalImported = result.landlords + result.properties + result.tenants + result.cheques;
+      if (totalImported === 0) {
+        const errText = result.errors.length > 0 ? result.errors.join('\n') : 'No data found in the file.';
+        res.send(twiml(`Could not import data:\n${errText}`));
+        return;
+      }
+
+      const lines: string[] = ['✅ Data imported successfully!'];
+      if (result.landlords > 0) lines.push(`👤 ${result.landlords} landlord${result.landlords !== 1 ? 's' : ''} added`);
+      if (result.properties > 0) lines.push(`🏠 ${result.properties} propert${result.properties !== 1 ? 'ies' : 'y'} added`);
+      if (result.tenants > 0) lines.push(`👤 ${result.tenants} tenant${result.tenants !== 1 ? 's' : ''} added`);
+      if (result.cheques > 0) lines.push(`🧾 ${result.cheques} cheque${result.cheques !== 1 ? 's' : ''} added`);
+      if (result.errors.length > 0) lines.push('', '⚠️ Warnings:', ...result.errors);
+
+      const summary = lines.join('\n');
+      console.log(`[EXCEL IMPORT] ${summary.slice(0, 120)}`);
+      res.send(twiml(summary));
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[EXCEL IMPORT ERROR]', msg);
+      res.send(twiml(`Failed to process the file. Make sure it is a valid .xlsx file.\n${msg}`));
+    }
+    return;
+  }
+
+  // ── "import data" trigger phrase ───────────────────────────────────────────
+  if (userMessage.toLowerCase() === 'import data' || userMessage === 'استيراد البيانات') {
+    res.send(twiml(
+      'Please send your Excel file (.xlsx) with these sheets:\n' +
+      '• Landlords\n' +
+      '• Properties\n' +
+      '• Tenants\n' +
+      '• Cheques\n\n' +
+      'I will import the data automatically.'
+    ));
+    return;
+  }
+
+  if (!userMessage) {
     res.send(twiml('Sorry, I could not understand your message.'));
     return;
   }
@@ -264,15 +355,20 @@ router.post('/incoming', async (req: Request, res: Response) => {
       daysUntilExpiry: daysUntil(c.endDate),
       formattedEndDate: formatDate(c.endDate),
     }));
-    const annotatedCheques = data.cheques.map(c => ({
-      id: c.id,
-      tenantName: c.tenantName,
-      unit: c.unit,
-      amount: c.amount,
-      chequeDate: c.chequeDate,
-      status: c.status,
-      daysUntilDue: daysUntil(c.chequeDate),
-    }));
+    const annotatedCheques = data.cheques.map(c => {
+      // Support both original format (chequeDate/unit) and Excel-imported format (dueDate/property)
+      const raw = c as unknown as Record<string, unknown>;
+      const dateField = (raw['dueDate'] as string) || c.chequeDate || '';
+      return {
+        id: c.id,
+        tenantName: c.tenantName,
+        location: c.unit || (raw['property'] as string) || '',
+        amount: c.amount,
+        dueDate: dateField,
+        status: c.status || 'pending',
+        daysUntilDue: dateField ? daysUntil(dateField) : null,
+      };
+    });
     const annotatedCharges = data.serviceCharges.map(c => ({
       ...c,
       daysUntilDue: daysUntil(c.nextDueDate),
@@ -282,6 +378,9 @@ router.post('/incoming', async (req: Request, res: Response) => {
 Reminder threshold: ${config.renewalReminderDays} days before contract end.
 
 DATA ACCESS:
+
+LANDLORDS:
+${JSON.stringify(data.landlords, null, 2)}
 
 PROPERTIES:
 ${JSON.stringify(data.properties, null, 2)}

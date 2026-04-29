@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import type { Tenant, Property, Cheque, Contract, ServiceCharge } from '../types';
+import type { Tenant, Property, Cheque, Contract, ServiceCharge, Landlord } from '../types';
 
 const DATA_DIR = path.resolve(process.cwd(), process.env.DATA_DIR || './data');
 
@@ -40,6 +40,9 @@ export const saveContracts = (d: Contract[]) => writeJSON('contracts.json', d);
 export const getServiceCharges = () => readJSON<ServiceCharge>('service-charges.json');
 export const saveServiceCharges = (d: ServiceCharge[]) => writeJSON('service-charges.json', d);
 
+export const getLandlords = () => readJSON<Landlord>('landlords.json');
+export const saveLandlords = (d: Landlord[]) => writeJSON('landlords.json', d);
+
 export function daysUntil(dateStr: string): number {
   const now = new Date();
   const todayUTC = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
@@ -56,6 +59,7 @@ export function addMonths(dateStr: string, months: number): string {
 
 export function allData() {
   return {
+    landlords: getLandlords(),
     tenants: getTenants(),
     properties: getProperties(),
     cheques: getCheques(),
