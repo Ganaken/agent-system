@@ -24,9 +24,9 @@
     "node-cron": "^4.2.1",
     "nodemailer": "^8.0.7",
     "pdfkit": "^0.18.0",
-    "uuid": "^14.0.0",
+    "ts-node": "^10.9.2",
+    "twilio": "^6.0.0",
     "typescript": "^6.0.3",
-    "ts-node": "^10.9.2"
-  },
-  "devDependencies": {}
+    "uuid": "^14.0.0"
+  }
 }

@@ -14,9 +14,11 @@ const contracts_1 = __importDefault(require("./routes/contracts"));
 const service_charges_1 = __importDefault(require("./routes/service-charges"));
 const chat_1 = __importDefault(require("./routes/chat"));
 const rera_1 = __importDefault(require("./routes/rera"));
+const whatsapp_1 = __importDefault(require("./routes/whatsapp"));
 (0, data_1.ensureDataDir)();
 const app = (0, express_1.default)();
 app.use(express_1.default.json());
+app.use(express_1.default.urlencoded({ extended: false }));
 // API routes
 app.use('/api/tenants', tenants_1.default);
 app.use('/api/properties', properties_1.default);
@@ -25,6 +27,7 @@ app.use('/api/contracts', contracts_1.default);
 app.use('/api/service-charges', service_charges_1.default);
 app.use('/api/chat', chat_1.default);
 app.use('/api/rera', rera_1.default);
+app.use('/api/whatsapp', whatsapp_1.default);
 // Health check + route listing
 app.get('/health', (_req, res) => {
     res.json({
@@ -47,6 +50,7 @@ app.get('/health', (_req, res) => {
             'POST /api/service-charges',
             'POST /api/chat',
             'POST /api/rera/check',
+            'POST /api/whatsapp/incoming',
         ],
     });
 });
@@ -64,6 +68,7 @@ app.listen(PORT, () => {
     console.log('  GET  /api/service-charges/due — service charges due');
     console.log('  POST /api/chat                — ask in Arabic or English');
     console.log('  POST /api/rera/check          — RERA rent increase calculator');
+    console.log('  POST /api/whatsapp/incoming   — Twilio WhatsApp chatbot webhook');
     console.log('  GET  /health                  — all routes');
     console.log('');
     (0, scheduler_1.startScheduler)();

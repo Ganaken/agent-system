@@ -9,11 +9,13 @@ import contractsRouter from './routes/contracts';
 import serviceChargesRouter from './routes/service-charges';
 import chatRouter from './routes/chat';
 import reraRouter from './routes/rera';
+import whatsappRouter from './routes/whatsapp';
 
 ensureDataDir();
 
 const app = express();
 app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
 
 // API routes
 app.use('/api/tenants', tenantsRouter);
@@ -23,6 +25,7 @@ app.use('/api/contracts', contractsRouter);
 app.use('/api/service-charges', serviceChargesRouter);
 app.use('/api/chat', chatRouter);
 app.use('/api/rera', reraRouter);
+app.use('/api/whatsapp', whatsappRouter);
 
 // Health check + route listing
 app.get('/health', (_req: Request, res: Response) => {
@@ -46,6 +49,7 @@ app.get('/health', (_req: Request, res: Response) => {
       'POST /api/service-charges',
       'POST /api/chat',
       'POST /api/rera/check',
+      'POST /api/whatsapp/incoming',
     ],
   });
 });
@@ -65,6 +69,7 @@ app.listen(PORT, () => {
   console.log('  GET  /api/service-charges/due — service charges due');
   console.log('  POST /api/chat                — ask in Arabic or English');
   console.log('  POST /api/rera/check          — RERA rent increase calculator');
+  console.log('  POST /api/whatsapp/incoming   — Twilio WhatsApp chatbot webhook');
   console.log('  GET  /health                  — all routes');
   console.log('');
   startScheduler();

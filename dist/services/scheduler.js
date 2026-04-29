@@ -10,6 +10,7 @@ exports.startScheduler = startScheduler;
 const node_cron_1 = __importDefault(require("node-cron"));
 const data_1 = require("../utils/data");
 const email_1 = require("./email");
+const whatsapp_1 = require("./whatsapp");
 const rera_1 = require("./rera");
 const data_2 = require("../utils/data");
 const MY_EMAIL = () => process.env.MY_EMAIL || '';
@@ -24,20 +25,26 @@ async function checkChequeReminders() {
         if (days < 0)
             continue;
         if (days <= 7 && !cheque.reminderSent7) {
-            await (0, email_1.sendEmail)(MY_EMAIL(), `🚨 URGENT: Cheque due in ${days} days — ${cheque.tenantName} Unit ${cheque.unit}`, (0, email_1.chequeEmail)(cheque, days));
+            const subject = `🚨 URGENT: Cheque due in ${days} days — ${cheque.tenantName} Unit ${cheque.unit}`;
+            await (0, email_1.sendEmail)(MY_EMAIL(), subject, (0, email_1.chequeEmail)(cheque, days));
+            await (0, whatsapp_1.sendAlert)(`🚨 URGENT: Cheque due in ${days} days\nTenant: ${cheque.tenantName} | Unit: ${cheque.unit}\nAmount: AED ${cheque.amount.toLocaleString()} | Date: ${cheque.chequeDate}\nCheque: ${cheque.chequeNumber} | Bank: ${cheque.bankName}`);
             cheque.reminderSent7 = true;
             cheque.reminderSent14 = true;
             cheque.reminderSent30 = true;
             changed = true;
         }
         else if (days <= 14 && !cheque.reminderSent14) {
-            await (0, email_1.sendEmail)(MY_EMAIL(), `⚠️ Cheque due in ${days} days — ${cheque.tenantName} Unit ${cheque.unit}`, (0, email_1.chequeEmail)(cheque, days));
+            const subject = `⚠️ Cheque due in ${days} days — ${cheque.tenantName} Unit ${cheque.unit}`;
+            await (0, email_1.sendEmail)(MY_EMAIL(), subject, (0, email_1.chequeEmail)(cheque, days));
+            await (0, whatsapp_1.sendAlert)(`⚠️ Cheque due in ${days} days\nTenant: ${cheque.tenantName} | Unit: ${cheque.unit}\nAmount: AED ${cheque.amount.toLocaleString()} | Date: ${cheque.chequeDate}\nCheque: ${cheque.chequeNumber} | Bank: ${cheque.bankName}`);
             cheque.reminderSent14 = true;
             cheque.reminderSent30 = true;
             changed = true;
         }
         else if (days <= 30 && !cheque.reminderSent30) {
-            await (0, email_1.sendEmail)(MY_EMAIL(), `📅 Cheque due in ${days} days — ${cheque.tenantName} Unit ${cheque.unit}`, (0, email_1.chequeEmail)(cheque, days));
+            const subject = `📅 Cheque due in ${days} days — ${cheque.tenantName} Unit ${cheque.unit}`;
+            await (0, email_1.sendEmail)(MY_EMAIL(), subject, (0, email_1.chequeEmail)(cheque, days));
+            await (0, whatsapp_1.sendAlert)(`📅 Cheque due in ${days} days\nTenant: ${cheque.tenantName} | Unit: ${cheque.unit}\nAmount: AED ${cheque.amount.toLocaleString()} | Date: ${cheque.chequeDate}\nCheque: ${cheque.chequeNumber} | Bank: ${cheque.bankName}`);
             cheque.reminderSent30 = true;
             changed = true;
         }
@@ -62,6 +69,7 @@ async function checkContractRenewals() {
         const reraInfo = await (0, rera_1.getRERAInfo)(area, contract.rentAmount);
         await (0, email_1.sendEmail)(contract.tenantEmail, `Contract Renewal Notice — Unit ${contract.unit} | إشعار تجديد العقد`, (0, email_1.tenantRenewalEmail)(contract, days));
         await (0, email_1.sendEmail)(MY_EMAIL(), `📋 Contract expiring in ${days} days — ${contract.tenantName} Unit ${contract.unit}`, (0, email_1.landlordContractEmail)(contract, days, reraInfo));
+        await (0, whatsapp_1.sendAlert)(`📋 Contract expiring in ${days} days\nTenant: ${contract.tenantName} | Unit: ${contract.unit}\nEnd Date: ${contract.endDate}\nRent: AED ${contract.rentAmount.toLocaleString()}/year\n✅ Renewal notice sent to ${contract.tenantEmail}`);
         contract.renewalEmailSent = true;
         changed = true;
     }
@@ -78,6 +86,7 @@ async function checkServiceCharges() {
         if (days > 0)
             continue;
         await (0, email_1.sendEmail)(MY_EMAIL(), `🏢 Service charge due — ${charge.propertyName} Unit ${charge.unit}`, (0, email_1.serviceChargeEmail)(charge));
+        await (0, whatsapp_1.sendAlert)(`🏢 Service charge due\nProperty: ${charge.propertyName} | Unit: ${charge.unit}\nAmount: AED ${charge.amount.toLocaleString()} | Due: ${charge.nextDueDate}\nPay to Dubai Land Department to avoid late fees.`);
         charge.lastPaymentDate = charge.nextDueDate;
         charge.nextDueDate = (0, data_1.addMonths)(charge.nextDueDate, 3);
         changed = true;

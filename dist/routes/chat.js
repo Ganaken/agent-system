@@ -7,9 +7,9 @@ const express_1 = require("express");
 const sdk_1 = __importDefault(require("@anthropic-ai/sdk"));
 const data_1 = require("../utils/data");
 const router = (0, express_1.Router)();
-const client = new sdk_1.default({ apiKey: process.env.ANTHROPIC_API_KEY });
 router.post('/', async (req, res) => {
     try {
+        const client = new sdk_1.default({ apiKey: process.env.ANTHROPIC_API_KEY });
         const { message } = req.body;
         if (!message?.trim()) {
             res.status(400).json({ error: 'message is required' });
