@@ -131,7 +131,12 @@ async function toolSendRenewalNotice(tenantName: string, increasePercent: number
   </div>
 </div>`;
 
-  await sendEmail(tenant.email, 'Contract Renewal Notice | إشعار تجديد العقد', html);
+  try {
+    await sendEmail(tenant.email, 'Contract Renewal Notice | إشعار تجديد العقد', html);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return `❌ Email failed: ${msg}`;
+  }
   return `✅ Renewal notice emailed to ${tenant.name} (${tenant.email})`;
 }
 
@@ -176,7 +181,12 @@ async function toolSendReminderToTenant(tenantName: string): Promise<string> {
   </div>
 </div>`;
 
-  await sendEmail(tenant.email, 'Contract Renewal Reminder | تذكير بتجديد العقد', html);
+  try {
+    await sendEmail(tenant.email, 'Contract Renewal Reminder | تذكير بتجديد العقد', html);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return `❌ Email failed: ${msg}`;
+  }
   return `✅ Reminder emailed to ${tenant.name} (${tenant.email})`;
 }
 
@@ -186,7 +196,12 @@ async function toolSendEmailToTenant(tenantName: string, subject: string, bodyHt
   if (!tenant) return `Tenant "${tenantName}" not found in database.`;
   if (!tenant.email) return `No email address on file for ${tenant.name}.`;
 
-  await sendEmail(tenant.email, subject, bodyHtml);
+  try {
+    await sendEmail(tenant.email, subject, bodyHtml);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return `❌ Email failed: ${msg}`;
+  }
   return `✅ Email sent to ${tenant.name} (${tenant.email})`;
 }
 

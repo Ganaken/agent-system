@@ -20,7 +20,12 @@ export async function checkChequeReminders(): Promise<void> {
 
     if (days <= 7 && !cheque.reminderSent7) {
       const subject = `🚨 URGENT: Cheque due in ${days} days — ${cheque.tenantName} Unit ${cheque.unit}`;
-      await sendEmail(MY_EMAIL(), subject, chequeEmail(cheque, days));
+      try {
+        await sendEmail(MY_EMAIL(), subject, chequeEmail(cheque, days));
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        await sendAlert(`❌ Email failed (cheque reminder):\n${msg}`);
+      }
       await sendAlert(
         `🚨 URGENT: Cheque due in ${days} days\nTenant: ${cheque.tenantName} | Unit: ${cheque.unit}\nAmount: AED ${cheque.amount.toLocaleString()} | Date: ${cheque.chequeDate}`
       );
@@ -30,7 +35,12 @@ export async function checkChequeReminders(): Promise<void> {
       changed = true;
     } else if (days <= 14 && !cheque.reminderSent14) {
       const subject = `⚠️ Cheque due in ${days} days — ${cheque.tenantName} Unit ${cheque.unit}`;
-      await sendEmail(MY_EMAIL(), subject, chequeEmail(cheque, days));
+      try {
+        await sendEmail(MY_EMAIL(), subject, chequeEmail(cheque, days));
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        await sendAlert(`❌ Email failed (cheque reminder):\n${msg}`);
+      }
       await sendAlert(
         `⚠️ Cheque due in ${days} days\nTenant: ${cheque.tenantName} | Unit: ${cheque.unit}\nAmount: AED ${cheque.amount.toLocaleString()} | Date: ${cheque.chequeDate}`
       );
@@ -39,7 +49,12 @@ export async function checkChequeReminders(): Promise<void> {
       changed = true;
     } else if (days <= 30 && !cheque.reminderSent30) {
       const subject = `📅 Cheque due in ${days} days — ${cheque.tenantName} Unit ${cheque.unit}`;
-      await sendEmail(MY_EMAIL(), subject, chequeEmail(cheque, days));
+      try {
+        await sendEmail(MY_EMAIL(), subject, chequeEmail(cheque, days));
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        await sendAlert(`❌ Email failed (cheque reminder):\n${msg}`);
+      }
       await sendAlert(
         `📅 Cheque due in ${days} days\nTenant: ${cheque.tenantName} | Unit: ${cheque.unit}\nAmount: AED ${cheque.amount.toLocaleString()} | Date: ${cheque.chequeDate}`
       );
@@ -68,20 +83,32 @@ export async function checkContractRenewals(): Promise<void> {
     const area = prop?.area ?? 'Dubai';
     const reraInfo = await getRERAInfo(area, contract.rentAmount);
 
-    await sendEmail(
-      contract.tenantEmail,
-      `Contract Renewal Notice — Unit ${contract.unit} | إشعار تجديد العقد`,
-      tenantRenewalEmail(contract, days)
-    );
+    let tenantEmailOk = true;
+    try {
+      await sendEmail(
+        contract.tenantEmail,
+        `Contract Renewal Notice — Unit ${contract.unit} | إشعار تجديد العقد`,
+        tenantRenewalEmail(contract, days)
+      );
+    } catch (err: unknown) {
+      tenantEmailOk = false;
+      const msg = err instanceof Error ? err.message : String(err);
+      await sendAlert(`❌ Email failed (tenant renewal notice — ${contract.tenantName}):\n${msg}`);
+    }
 
-    await sendEmail(
-      MY_EMAIL(),
-      `📋 Contract expiring in ${days} days — ${contract.tenantName} Unit ${contract.unit}`,
-      landlordContractEmail(contract, days, reraInfo)
-    );
+    try {
+      await sendEmail(
+        MY_EMAIL(),
+        `📋 Contract expiring in ${days} days — ${contract.tenantName} Unit ${contract.unit}`,
+        landlordContractEmail(contract, days, reraInfo)
+      );
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      await sendAlert(`❌ Email failed (landlord contract summary):\n${msg}`);
+    }
 
     await sendAlert(
-      `📋 Contract expiring in ${days} days\nTenant: ${contract.tenantName} | Unit: ${contract.unit}\nEnd Date: ${contract.endDate}\nRent: AED ${contract.rentAmount.toLocaleString()}/year\n✅ Renewal notice sent to ${contract.tenantEmail}`
+      `📋 Contract expiring in ${days} days\nTenant: ${contract.tenantName} | Unit: ${contract.unit}\nEnd Date: ${contract.endDate}\nRent: AED ${contract.rentAmount.toLocaleString()}/year\n${tenantEmailOk ? `✅ Renewal notice sent to ${contract.tenantEmail}` : `⚠️ Email to tenant failed`}`
     );
 
     contract.renewalEmailSent = true;
@@ -102,7 +129,12 @@ export async function checkServiceCharges(): Promise<void> {
     const days = daysUntil(charge.nextDueDate);
     if (days > 0) continue;
 
-    await sendEmail(MY_EMAIL(), `🏢 Service charge due — ${charge.propertyName} Unit ${charge.unit}`, serviceChargeEmail(charge));
+    try {
+      await sendEmail(MY_EMAIL(), `🏢 Service charge due — ${charge.propertyName} Unit ${charge.unit}`, serviceChargeEmail(charge));
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      await sendAlert(`❌ Email failed (service charge — ${charge.propertyName} Unit ${charge.unit}):\n${msg}`);
+    }
 
     await sendAlert(
       `🏢 Service charge due\nProperty: ${charge.propertyName} | Unit: ${charge.unit}\nAmount: AED ${charge.amount.toLocaleString()} | Due: ${charge.nextDueDate}\nPay to Dubai Land Department to avoid late fees.`

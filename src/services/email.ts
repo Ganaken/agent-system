@@ -3,7 +3,9 @@ import type { Cheque, Contract, ServiceCharge } from '../types';
 
 function createTransporter() {
   return nodemailer.createTransport({
-    service: 'gmail',
+    host: 'smtp.gmail.com',
+    port: 587,
+    secure: false,
     auth: {
       user: process.env.GMAIL_USER,
       pass: process.env.GMAIL_PASS,
@@ -17,13 +19,19 @@ export async function sendEmail(to: string, subject: string, html: string): Prom
     return;
   }
   const transporter = createTransporter();
-  await transporter.sendMail({
-    from: `"Dubai Property Manager" <${process.env.GMAIL_USER}>`,
-    to,
-    subject,
-    html,
-  });
-  console.log(`[EMAIL SENT] To: ${to} | ${subject}`);
+  try {
+    const info = await transporter.sendMail({
+      from: `"Dubai Property Manager" <${process.env.GMAIL_USER}>`,
+      to,
+      subject,
+      html,
+    });
+    console.log(`[EMAIL SENT] To: ${to} | ${subject} | messageId: ${info.messageId}`);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[EMAIL ERROR] To: ${to} | ${subject} | ${msg}`, err);
+    throw err;
+  }
 }
 
 export function chequeEmail(cheque: Cheque, days: number): string {
