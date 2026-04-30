@@ -27,7 +27,10 @@
       "Bash(npm uninstall *)",
       "Bash(mkdir -p .claude/skills)",
       "Bash(curl -o .claude/skills/caveman.md https://raw.githubusercontent.com/juliusbrussee/caveman/main/caveman.md)",
-      "Bash(claude plugin *)"
+      "Bash(claude plugin *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)"
     ]
   }
 }
