@@ -24,7 +24,10 @@
       "Bash(npm list *)",
       "Bash(npm run *)",
       "Skill(claude-api)",
-      "Bash(npm uninstall *)"
+      "Bash(npm uninstall *)",
+      "Bash(mkdir -p .claude/skills)",
+      "Bash(curl -o .claude/skills/caveman.md https://raw.githubusercontent.com/juliusbrussee/caveman/main/caveman.md)",
+      "Bash(claude plugin *)"
     ]
   }
 }
