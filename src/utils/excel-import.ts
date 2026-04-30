@@ -73,27 +73,39 @@ function num(row: Record<string, unknown>, field: string): number {
   return isNaN(n) ? 0 : n;
 }
 
-function dateStr(row: Record<string, unknown>, field: string): string {
-  const val = findVal(row, field);
-  if (val instanceof Date) return val.toISOString().split('T')[0];
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+function toDate(val: unknown): Date | null {
+  if (val instanceof Date) return val;
   if (typeof val === 'number' && val > 0) {
-    // Excel serial date: days since 1900-01-01 (25569 days before Unix epoch)
-    const ms = (val - 25569) * 86400 * 1000;
-    return new Date(ms).toISOString().split('T')[0];
+    return new Date((val - 25569) * 86400 * 1000);
   }
   if (typeof val === 'string' && val.trim()) {
     const s = val.trim();
-    // DD/MM/YYYY
     const dmy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
     if (dmy) {
       const [, dd, mm, yyyy] = dmy;
-      return `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
+      return new Date(`${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`);
     }
     const d = new Date(s);
-    if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
-    return s;
+    if (!isNaN(d.getTime())) return d;
   }
-  return '';
+  return null;
+}
+
+function dateStr(row: Record<string, unknown>, field: string): string {
+  const d = toDate(findVal(row, field));
+  if (!d) return '';
+  return d.toISOString().split('T')[0];
+}
+
+function dateDDMonYYYY(row: Record<string, unknown>, field: string): string {
+  const d = toDate(findVal(row, field));
+  if (!d) return '';
+  const dd = String(d.getUTCDate()).padStart(2, '0');
+  const mon = MONTHS[d.getUTCMonth()];
+  const yyyy = d.getUTCFullYear();
+  return `${dd}-${mon}-${yyyy}`;
 }
 
 // Reads a vertically-structured sheet:
@@ -169,6 +181,7 @@ export function importExcelBuffer(buffer: Buffer): ImportResult {
   let chequeCount = 0;
 
   // Clear all data before import — no merging with existing records
+  writeJSON('landlords.json', []);
   writeJSON('tenants.json', []);
   writeJSON('properties.json', []);
   writeJSON('cheques.json', []);
@@ -220,10 +233,10 @@ export function importExcelBuffer(buffer: Buffer): ImportResult {
         id: uuidv4(),
         buildingName: str(r, 'Building Name'),
         unitNumber: str(r, 'Unit Number'),
-        area: str(r, 'Area / Location'),
-        type: str(r, 'Type'),
+        area: str(r, 'Area / Location in Dubai'),
+        type: str(r, 'Type (Apartment / Villa / Office)'),
         landlordName: str(r, 'Landlord Name'),
-        serviceCharge: num(r, 'Service Charge (AED/year)'),
+        serviceCharge: num(r, 'Service Charge Amount (AED/year) - Aprox'),
         notes: str(r, 'Notes'),
       }));
     writeJSON('properties.json', data);
@@ -245,8 +258,8 @@ export function importExcelBuffer(buffer: Buffer): ImportResult {
         id: uuidv4(),
         name: str(r, 'Full Name'),
         email: str(r, 'Email Address'),
-        whatsapp: str(r, 'WhatsApp Number'),
-        property: str(r, 'Property / Unit'),
+        whatsapp: str(r, 'Phone Number'),
+        property: str(r, 'Which Property / Unit'),
         landlordName: str(r, 'Landlord Name'),
         contractStart: dateStr(r, 'Contract Start Date (DD/MM/YYYY)'),
         contractEnd: dateStr(r, 'Contract End Date (DD/MM/YYYY)'),
@@ -274,8 +287,8 @@ export function importExcelBuffer(buffer: Buffer): ImportResult {
         id: uuidv4(),
         tenantName: str(r, 'Tenant Name'),
         property: str(r, 'Property / Unit'),
-        amount: num(r, 'Amount (AED)'),
-        dueDate: dateStr(r, 'Due Date (DD/MM/YYYY)'),
+        amount: num(r, 'Cheque Amount (AED)'),
+        dueDate: dateDDMonYYYY(r, 'Due Date (DD/MM/YYYY)'),
       }));
     writeJSON('cheques.json', data);
     chequeCount = data.length;
