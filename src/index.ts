@@ -10,6 +10,7 @@ import serviceChargesRouter from './routes/service-charges';
 import chatRouter from './routes/chat';
 import reraRouter from './routes/rera';
 import whatsappRouter from './routes/whatsapp';
+import notifyRouter from './routes/notify';
 
 ensureDataDir();
 
@@ -26,6 +27,7 @@ app.use('/api/service-charges', serviceChargesRouter);
 app.use('/api/chat', chatRouter);
 app.use('/api/rera', reraRouter);
 app.use('/api/whatsapp', whatsappRouter);
+app.use('/api/notify', notifyRouter);
 
 // Health check + route listing
 app.get('/health', (_req: Request, res: Response) => {
@@ -50,6 +52,9 @@ app.get('/health', (_req: Request, res: Response) => {
       'POST /api/chat',
       'POST /api/rera/check',
       'POST /api/whatsapp/incoming',
+      'POST /api/notify/cheques',
+      'POST /api/notify/contracts',
+      'POST /api/notify/service-charges',
     ],
   });
 });
@@ -71,6 +76,9 @@ app.listen(PORT, () => {
   console.log('  POST /api/rera/check          — RERA rent increase calculator');
   console.log('  POST /api/whatsapp/incoming   — Twilio WhatsApp chatbot webhook');
   console.log('  GET  /api/whatsapp/test-email — send a test email to GMAIL_USER');
+  console.log('  POST /api/notify/cheques      — WhatsApp alert: cheques due today / in 7 days');
+  console.log('  POST /api/notify/contracts    — WhatsApp alert: contracts expiring in 120 days');
+  console.log('  POST /api/notify/service-charges — WhatsApp alert: service charges due');
   console.log('  GET  /health                  — all routes');
   console.log('');
   console.log('  Env vars:');
