@@ -54,11 +54,11 @@ router.post('/', async (req: Request, res: Response) => {
         ...c,
         daysUntilDue: daysUntil(c.chequeDate),
       }))
-      .sort((a, b) => {
-        const da = a.daysUntilDue ?? Infinity;
-        const db = b.daysUntilDue ?? Infinity;
-        return da - db;
-      });
+      .sort((a, b) => a.daysUntilDue - b.daysUntilDue);
+
+    const nextCheque = annotatedCheques.find(
+      c => c.status === 'pending' && c.daysUntilDue >= 0,
+    ) ?? null;
     const annotatedContracts = data.contracts.map(c => ({
       ...c,
       daysUntilExpiry: daysUntil(c.endDate),
@@ -78,7 +78,10 @@ ${JSON.stringify(data.properties, null, 2)}
 TENANTS:
 ${JSON.stringify(data.tenants, null, 2)}
 
-CHEQUES (sorted by daysUntilDue ascending — soonest first; negative = overdue; "next cheque" = first pending entry with daysUntilDue >= 0):
+NEXT CHEQUE DUE (pending, soonest from today):
+${nextCheque ? JSON.stringify(nextCheque, null, 2) : 'None'}
+
+ALL CHEQUES (sorted by daysUntilDue ascending — soonest first; negative = overdue):
 ${JSON.stringify(annotatedCheques, null, 2)}
 
 CONTRACTS (daysUntilExpiry = days from today):
@@ -96,6 +99,7 @@ RULES:
 - Reference tenant names, unit numbers, and dates clearly.
 - For rent increase questions, cite Dubai RERA Decree 43/2013 rules.
 - Today is ${today}.
+- NEXT CHEQUE: When asked for "the next cheque" or "next due cheque", always use the NEXT CHEQUE DUE field above — never infer from the full list.
 - EMAIL: When asked to send an email, you MUST call the send_email tool with the recipient's actual email address from the tenant data. Never just say you will send it — call the tool.`;
 
     const messages: Anthropic.MessageParam[] = [{ role: 'user', content: message }];
