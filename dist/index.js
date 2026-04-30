@@ -69,7 +69,13 @@ app.listen(PORT, () => {
     console.log('  POST /api/chat                — ask in Arabic or English');
     console.log('  POST /api/rera/check          — RERA rent increase calculator');
     console.log('  POST /api/whatsapp/incoming   — Twilio WhatsApp chatbot webhook');
+    console.log('  GET  /api/whatsapp/test-email — send a test email to GMAIL_USER');
     console.log('  GET  /health                  — all routes');
+    console.log('');
+    console.log('  Env vars:');
+    console.log(`  GMAIL_USER: ${process.env.GMAIL_USER ? '✓ set' : '✗ NOT SET'}`);
+    console.log(`  GMAIL_PASS: ${process.env.GMAIL_PASS ? '✓ set' : '✗ NOT SET'}`);
+    console.log(`  ANTHROPIC_API_KEY: ${process.env.ANTHROPIC_API_KEY ? '✓ set' : '✗ NOT SET'}`);
     console.log('');
     (0, scheduler_1.startScheduler)();
 });

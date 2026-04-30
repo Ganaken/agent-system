@@ -1,45 +1,26 @@
 "use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.sendEmail = sendEmail;
 exports.chequeEmail = chequeEmail;
 exports.tenantRenewalEmail = tenantRenewalEmail;
 exports.landlordContractEmail = landlordContractEmail;
 exports.serviceChargeEmail = serviceChargeEmail;
-const nodemailer_1 = __importDefault(require("nodemailer"));
-function createTransporter() {
-    return nodemailer_1.default.createTransport({
-        host: 'smtp.gmail.com',
-        port: 587,
-        secure: false,
-        auth: {
-            user: process.env.GMAIL_USER,
-            pass: process.env.GMAIL_PASS,
-        },
-    });
-}
-async function sendEmail(to, subject, html) {
-    if (!process.env.GMAIL_USER || !process.env.GMAIL_PASS) {
-        console.log(`[EMAIL SKIPPED — no Gmail credentials] To: ${to} | ${subject}`);
+async function sendEmail(to, subject, html, type = 'general') {
+    const webhookUrl = process.env.N8N_EMAIL_WEBHOOK_URL;
+    if (!webhookUrl) {
+        console.log(`[EMAIL SKIPPED — no N8N_EMAIL_WEBHOOK_URL] To: ${to} | ${subject}`);
         return;
     }
-    const transporter = createTransporter();
-    try {
-        const info = await transporter.sendMail({
-            from: `"Dubai Property Manager" <${process.env.GMAIL_USER}>`,
-            to,
-            subject,
-            html,
-        });
-        console.log(`[EMAIL SENT] To: ${to} | ${subject} | messageId: ${info.messageId}`);
+    const res = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to, subject, html, type }),
+    });
+    if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`n8n webhook error ${res.status}: ${text}`);
     }
-    catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.error(`[EMAIL ERROR] To: ${to} | ${subject} | ${msg}`, err);
-        throw err;
-    }
+    console.log(`[EMAIL SENT] To: ${to} | ${subject} | type: ${type}`);
 }
 function chequeEmail(cheque, days) {
     const urgency = days <= 7 ? '#c0392b' : days <= 14 ? '#e67e22' : '#2980b9';

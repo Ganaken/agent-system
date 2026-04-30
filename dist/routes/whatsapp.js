@@ -557,5 +557,22 @@ EMAIL: When the landlord asks to send an email to a tenant (in any language), us
         res.send(twiml('Sorry, an error occurred. Please try again.'));
     }
 });
+// ─── Test email ───────────────────────────────────────────────────────────────
+router.get('/test-email', async (_req, res) => {
+    const to = process.env.MY_EMAIL;
+    if (!to) {
+        res.status(500).json({ error: 'MY_EMAIL env var is not set' });
+        return;
+    }
+    try {
+        await (0, email_1.sendEmail)(to, 'Test Email — Dubai Landlord System', '<p>This is a test email from the Dubai Landlord Management System.</p>', 'test');
+        res.json({ success: true, to });
+    }
+    catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        const stack = err instanceof Error ? err.stack : undefined;
+        res.status(500).json({ error: msg, stack });
+    }
+});
 exports.default = router;
 //# sourceMappingURL=whatsapp.js.map

@@ -151,6 +151,11 @@ function importExcelBuffer(buffer) {
     let propertyCount = 0;
     let tenantCount = 0;
     let chequeCount = 0;
+    // Clear all data before import — no merging with existing records
+    (0, data_1.writeJSON)('tenants.json', []);
+    (0, data_1.writeJSON)('properties.json', []);
+    (0, data_1.writeJSON)('cheques.json', []);
+    (0, data_1.writeJSON)('contracts.json', []);
     const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: true });
     console.log('[EXCEL IMPORT] Sheets found:', workbook.SheetNames);
     for (const sheetName of workbook.SheetNames) {
@@ -222,8 +227,8 @@ function importExcelBuffer(buffer) {
             whatsapp: str(r, 'WhatsApp Number'),
             property: str(r, 'Property / Unit'),
             landlordName: str(r, 'Landlord Name'),
-            contractStart: dateStr(r, 'Contract Start (DD/MM/YYYY)'),
-            contractEnd: dateStr(r, 'Contract End (DD/MM/YYYY)'),
+            contractStart: dateStr(r, 'Contract Start Date (DD/MM/YYYY)'),
+            contractEnd: dateStr(r, 'Contract End Date (DD/MM/YYYY)'),
             annualRent: num(r, 'Annual Rent (AED)'),
             numberOfCheques: Math.round(num(r, 'Number of Cheques')),
             emiratesId: str(r, 'Emirates ID'),
