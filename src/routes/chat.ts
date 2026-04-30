@@ -49,10 +49,16 @@ router.post('/', async (req: Request, res: Response) => {
     const today = new Date().toISOString().split('T')[0];
     const data = allData();
 
-    const annotatedCheques = data.cheques.map(c => ({
-      ...c,
-      daysUntilDue: daysUntil(c.chequeDate),
-    }));
+    const annotatedCheques = data.cheques
+      .map(c => ({
+        ...c,
+        daysUntilDue: daysUntil(c.chequeDate),
+      }))
+      .sort((a, b) => {
+        const da = a.daysUntilDue ?? Infinity;
+        const db = b.daysUntilDue ?? Infinity;
+        return da - db;
+      });
     const annotatedContracts = data.contracts.map(c => ({
       ...c,
       daysUntilExpiry: daysUntil(c.endDate),
@@ -72,7 +78,7 @@ ${JSON.stringify(data.properties, null, 2)}
 TENANTS:
 ${JSON.stringify(data.tenants, null, 2)}
 
-CHEQUES (daysUntilDue = days from today; negative = overdue):
+CHEQUES (sorted by daysUntilDue ascending — soonest first; negative = overdue; "next cheque" = first pending entry with daysUntilDue >= 0):
 ${JSON.stringify(annotatedCheques, null, 2)}
 
 CONTRACTS (daysUntilExpiry = days from today):

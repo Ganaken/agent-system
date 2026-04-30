@@ -442,20 +442,26 @@ router.post('/incoming', async (req: Request, res: Response) => {
       daysUntilExpiry: daysUntil(c.endDate),
       formattedEndDate: formatDate(c.endDate),
     }));
-    const annotatedCheques = data.cheques.map(c => {
-      // Support both original format (chequeDate/unit) and Excel-imported format (dueDate/property)
-      const raw = c as unknown as Record<string, unknown>;
-      const dateField = (raw['dueDate'] as string) || c.chequeDate || '';
-      return {
-        id: c.id,
-        tenantName: c.tenantName,
-        location: c.unit || (raw['property'] as string) || '',
-        amount: c.amount,
-        dueDate: dateField,
-        status: c.status || 'pending',
-        daysUntilDue: dateField ? daysUntil(dateField) : null,
-      };
-    });
+    const annotatedCheques = data.cheques
+      .map(c => {
+        // Support both original format (chequeDate/unit) and Excel-imported format (dueDate/property)
+        const raw = c as unknown as Record<string, unknown>;
+        const dateField = (raw['dueDate'] as string) || c.chequeDate || '';
+        return {
+          id: c.id,
+          tenantName: c.tenantName,
+          location: c.unit || (raw['property'] as string) || '',
+          amount: c.amount,
+          dueDate: dateField,
+          status: c.status || 'pending',
+          daysUntilDue: dateField ? daysUntil(dateField) : null,
+        };
+      })
+      .sort((a, b) => {
+        const da = a.daysUntilDue ?? Infinity;
+        const db = b.daysUntilDue ?? Infinity;
+        return da - db;
+      });
     const annotatedCharges = data.serviceCharges.map(c => ({
       ...c,
       daysUntilDue: daysUntil(c.nextDueDate),
@@ -475,7 +481,7 @@ ${JSON.stringify(data.properties, null, 2)}
 TENANTS:
 ${JSON.stringify(data.tenants, null, 2)}
 
-CHEQUES (daysUntilDue: negative = overdue):
+CHEQUES (sorted by daysUntilDue ascending — soonest first; negative = overdue; "next cheque" = first pending entry with daysUntilDue >= 0):
 ${JSON.stringify(annotatedCheques, null, 2)}
 
 CONTRACTS (daysUntilExpiry from today):
