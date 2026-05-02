@@ -106,18 +106,36 @@ function dateField(row, ...fields) {
     }
     return '';
 }
-function getRows(wb, sheetName) {
-    const sheet = wb.Sheets[sheetName];
-    if (!sheet)
-        return [];
-    const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
-    return rows.filter(r => Object.values(r).some(v => v !== '' && v !== null && v !== undefined));
+// Strip emojis and punctuation, lowercase — so "🏠 Units" and "Units" both → "units"
+function sheetKey(s) {
+    return s.replace(/[^\w\s]/gu, '').replace(/\s+/g, ' ').trim().toLowerCase();
 }
 function findSheet(wb, target) {
     if (wb.SheetNames.includes(target))
         return target;
-    const t = target.toLowerCase().trim();
-    return wb.SheetNames.find(s => s.toLowerCase().trim() === t);
+    const t = sheetKey(target);
+    return wb.SheetNames.find(s => sheetKey(s) === t);
+}
+// Row 1 = title (skip), Row 2 = headers (strip * markers), Row 3+ = data
+function getRows(wb, sheetName) {
+    const sheet = wb.Sheets[sheetName];
+    if (!sheet)
+        return [];
+    const raw = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+    if (raw.length < 3)
+        return [];
+    const headers = raw[1].map(h => String(h ?? '').replace(/\*/g, '').trim());
+    const dataRows = raw.slice(2);
+    return dataRows
+        .map(row => {
+        const record = {};
+        headers.forEach((header, i) => {
+            if (header)
+                record[header] = row[i] ?? '';
+        });
+        return record;
+    })
+        .filter(r => Object.values(r).some(v => v !== '' && v !== null && v !== undefined));
 }
 async function importExcelBuffer(buffer) {
     const errors = [];
@@ -130,7 +148,7 @@ async function importExcelBuffer(buffer) {
     ]);
     const wb = XLSX.read(buffer, { type: 'buffer', cellDates: true });
     console.log('[EXCEL IMPORT] Sheets found:', wb.SheetNames);
-    // ── Buildings ──────────────────────────────────────────────────────────────
+    // ── Buildings (optional — skip silently if empty) ─────────────────────────
     let buildingCount = 0;
     const buildingSheet = findSheet(wb, '🏢 Buildings');
     if (buildingSheet) {
@@ -155,9 +173,6 @@ async function importExcelBuffer(buffer) {
         }
         console.log(`[EXCEL IMPORT] Buildings: ${buildingCount}`);
     }
-    else {
-        errors.push('Sheet "🏢 Buildings" not found');
-    }
     // ── Units ──────────────────────────────────────────────────────────────────
     let unitCount = 0;
     const unitSheet = findSheet(wb, '🏠 Units');
@@ -172,8 +187,8 @@ async function importExcelBuffer(buffer) {
             type: str(r, 'Type'),
             area_sqm: num(r, 'Area (sqm)', 'Area sqm', 'Area'),
             floor: Math.round(num(r, 'Floor')),
-            annual_rent: num(r, 'Annual Rent (AED)', 'Annual Rent', 'Rent'),
-            service_charge: num(r, 'Service Charge (AED)', 'Service Charge', 'SC'),
+            annual_rent: num(r, 'Annual Rent', 'Annual Rent (AED)', 'Rent'),
+            service_charge: num(r, 'Service Charge', 'Service Charge (AED)', 'SC'),
             notes: str(r, 'Notes'),
         }));
         if (data.length > 0) {
@@ -186,7 +201,7 @@ async function importExcelBuffer(buffer) {
         console.log(`[EXCEL IMPORT] Units: ${unitCount}`);
     }
     else {
-        errors.push('Sheet "🏠 Units" not found');
+        errors.push(`Sheet "🏠 Units" not found. Sheets in file: ${wb.SheetNames.join(', ')}`);
     }
     // ── Tenants ────────────────────────────────────────────────────────────────
     let tenantCount = 0;
@@ -203,8 +218,8 @@ async function importExcelBuffer(buffer) {
             email: str(r, 'Email', 'Email Address'),
             phone: str(r, 'Phone', 'Phone Number', 'WhatsApp'),
             nationality: str(r, 'Nationality'),
-            contract_start: dateField(r, 'Contract Start', 'Contract Start Date', 'Start Date'),
-            contract_end: dateField(r, 'Contract End', 'Contract End Date', 'End Date'),
+            contract_start: dateField(r, 'Contract Start (DD/MM/YYYY)', 'Contract Start', 'Contract Start Date', 'Start Date'),
+            contract_end: dateField(r, 'Contract End (DD/MM/YYYY)', 'Contract End', 'Contract End Date', 'End Date'),
             number_of_cheques: Math.round(num(r, 'Number of Cheques', 'Cheques', 'No of Cheques')),
             notes: str(r, 'Notes'),
             status: str(r, 'Status') || 'active',
@@ -219,7 +234,7 @@ async function importExcelBuffer(buffer) {
         console.log(`[EXCEL IMPORT] Tenants: ${tenantCount}`);
     }
     else {
-        errors.push('Sheet "👤 Tenants" not found');
+        errors.push(`Sheet "👤 Tenants" not found. Sheets in file: ${wb.SheetNames.join(', ')}`);
     }
     // ── Cheques ────────────────────────────────────────────────────────────────
     let chequeCount = 0;
@@ -227,14 +242,14 @@ async function importExcelBuffer(buffer) {
     if (chequeSheet) {
         const rows = getRows(wb, chequeSheet);
         const data = rows
-            .filter(r => str(r, 'Tenant Name', 'Tenant'))
+            .filter(r => str(r, 'Tenant Full Name', 'Tenant Name', 'Tenant'))
             .map(r => ({
             id: (0, crypto_1.randomUUID)(),
-            tenant_name: str(r, 'Tenant Name', 'Tenant'),
+            tenant_name: str(r, 'Tenant Full Name', 'Tenant Name', 'Tenant'),
             building_name: str(r, 'Building Name', 'Building'),
             unit_number: str(r, 'Unit Number', 'Unit No', 'Unit'),
-            amount: num(r, 'Amount (AED)', 'Cheque Amount (AED)', 'Amount', 'Cheque Amount'),
-            due_date: dateField(r, 'Due Date', 'Date'),
+            amount: num(r, 'Cheque Amount (AED)', 'Amount (AED)', 'Cheque Amount', 'Amount'),
+            due_date: dateField(r, 'Due Date (DD/MM/YYYY)', 'Due Date', 'Date'),
             bank_name: str(r, 'Bank Name', 'Bank'),
             cheque_number: str(r, 'Cheque Number', 'Cheque No', 'Cheque #'),
             status: 'pending',
@@ -251,7 +266,7 @@ async function importExcelBuffer(buffer) {
         console.log(`[EXCEL IMPORT] Cheques: ${chequeCount}`);
     }
     else {
-        errors.push('Sheet "🧾 Cheques" not found');
+        errors.push(`Sheet "🧾 Cheques" not found. Sheets in file: ${wb.SheetNames.join(', ')}`);
     }
     // ── Owner Details (log only) ───────────────────────────────────────────────
     const ownerSheet = findSheet(wb, '⚙️ Your Details');
