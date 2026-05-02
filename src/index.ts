@@ -10,6 +10,7 @@ import chatRouter from './routes/chat';
 import reraRouter from './routes/rera';
 import whatsappRouter from './routes/whatsapp';
 import notifyRouter from './routes/notify';
+import emailRouter from './routes/email';
 
 const app = express();
 app.use(express.json());
@@ -24,6 +25,7 @@ app.use('/api/chat', chatRouter);
 app.use('/api/rera', reraRouter);
 app.use('/api/whatsapp', whatsappRouter);
 app.use('/api/notify', notifyRouter);
+app.use('/api/email', emailRouter);
 
 app.get('/health', (_req: Request, res: Response) => {
   res.json({
@@ -50,6 +52,7 @@ app.get('/health', (_req: Request, res: Response) => {
       'POST /api/notify/cheques',
       'POST /api/notify/contracts',
       'POST /api/notify/service-charges',
+      'POST /api/email/send',
     ],
   });
 });
@@ -75,6 +78,7 @@ app.listen(PORT, () => {
   console.log('  POST /api/notify/cheques      — WhatsApp alert: cheques due today / in 7 days');
   console.log('  POST /api/notify/contracts    — WhatsApp alert: contracts expiring in 120 days');
   console.log('  POST /api/notify/service-charges — WhatsApp alert: service charges due');
+  console.log('  POST /api/email/send          — manually send email (to, subject, body, tenant_id, type)');
   console.log('  GET  /health                  — all routes');
   console.log('');
   console.log('  Env vars:');

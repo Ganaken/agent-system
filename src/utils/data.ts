@@ -19,25 +19,25 @@ export function addMonths(dateStr: string, months: number): string {
 }
 
 export async function getBuildings(): Promise<Building[]> {
-  const { data, error } = await supabase.from('buildings').select('*');
+  const { data, error } = await supabase.from('buildings').select('*').order('name', { ascending: true });
   if (error) { console.error('[DB] buildings:', error.message); return []; }
   return data ?? [];
 }
 
 export async function getUnits(): Promise<Unit[]> {
-  const { data, error } = await supabase.from('units').select('*');
+  const { data, error } = await supabase.from('units').select('*').order('building_name', { ascending: true });
   if (error) { console.error('[DB] units:', error.message); return []; }
   return data ?? [];
 }
 
 export async function getTenants(): Promise<Tenant[]> {
-  const { data, error } = await supabase.from('tenants').select('*');
+  const { data, error } = await supabase.from('tenants').select('*').order('full_name', { ascending: true });
   if (error) { console.error('[DB] tenants:', error.message); return []; }
   return data ?? [];
 }
 
 export async function getCheques(): Promise<Cheque[]> {
-  const { data, error } = await supabase.from('cheques').select('*');
+  const { data, error } = await supabase.from('cheques').select('*').order('due_date', { ascending: true });
   if (error) { console.error('[DB] cheques:', error.message); return []; }
   return data ?? [];
 }

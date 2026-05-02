@@ -124,7 +124,7 @@ export async function importExcelBuffer(buffer: Buffer): Promise<ImportResult> {
   const wb = XLSX.read(buffer, { type: 'buffer', cellDates: true });
   console.log('[EXCEL IMPORT] Sheets found:', wb.SheetNames);
 
-  // ── Buildings (optional — skip silently if empty) ─────────────────────────
+  // ── Buildings ─────────────────────────────────────────────────────────────
   let buildingCount = 0;
   const buildingSheet = findSheet(wb, '🏢 Buildings');
   if (buildingSheet) {
@@ -135,8 +135,8 @@ export async function importExcelBuffer(buffer: Buffer): Promise<ImportResult> {
         id: randomUUID(),
         name: str(r, 'Name', 'Building Name'),
         location: str(r, 'Location'),
-        total_units: Math.round(num(r, 'Total Units', 'Units')),
-        type: str(r, 'Type'),
+        total_units: Math.round(num(r, 'Total Units', 'Units')) || 1,
+        type: str(r, 'Type') || 'Residential',
         developer: str(r, 'Developer'),
         notes: str(r, 'Notes'),
       }));
@@ -161,9 +161,11 @@ export async function importExcelBuffer(buffer: Buffer): Promise<ImportResult> {
         unit_number: str(r, 'Unit Number', 'Unit No', 'Unit'),
         type: str(r, 'Type'),
         area_sqm: num(r, 'Area (sqm)', 'Area sqm', 'Area'),
-        floor: Math.round(num(r, 'Floor')),
+        floor: str(r, 'Floor'),
         annual_rent: num(r, 'Annual Rent', 'Annual Rent (AED)', 'Rent'),
         service_charge: num(r, 'Service Charge', 'Service Charge (AED)', 'SC'),
+        purchase_price: num(r, 'Purchase Price', 'Purchase Price (AED)') || null,
+        status: str(r, 'Status') || 'active',
         notes: str(r, 'Notes'),
       }));
     if (data.length > 0) {
@@ -191,6 +193,10 @@ export async function importExcelBuffer(buffer: Buffer): Promise<ImportResult> {
         email: str(r, 'Email', 'Email Address'),
         phone: str(r, 'Phone', 'Phone Number', 'WhatsApp'),
         nationality: str(r, 'Nationality'),
+        id_number: str(r, 'ID Number', 'Emirates ID', 'Passport Number') || null,
+        id_expiry: dateField(r, 'ID Expiry', 'Emirates ID Expiry', 'Passport Expiry') || null,
+        rera_number: str(r, 'RERA Number', 'RERA No') || null,
+        ejari_number: str(r, 'Ejari Number', 'Ejari No', 'EJARI') || null,
         contract_start: dateField(r, 'Contract Start (DD/MM/YYYY)', 'Contract Start', 'Contract Start Date', 'Start Date'),
         contract_end: dateField(r, 'Contract End (DD/MM/YYYY)', 'Contract End', 'Contract End Date', 'End Date'),
         number_of_cheques: Math.round(num(r, 'Number of Cheques', 'Cheques', 'No of Cheques')),
@@ -223,9 +229,10 @@ export async function importExcelBuffer(buffer: Buffer): Promise<ImportResult> {
         due_date: dateField(r, 'Due Date (DD/MM/YYYY)', 'Due Date', 'Date'),
         bank_name: str(r, 'Bank Name', 'Bank'),
         cheque_number: str(r, 'Cheque Number', 'Cheque No', 'Cheque #'),
-        status: 'pending' as const,
+        status: (str(r, 'Status') || 'pending') as 'pending' | 'collected' | 'bounced' | 'cancelled',
         reminder_sent_7: false,
         reminder_sent_1: false,
+        notes: str(r, 'Notes'),
       }));
     if (data.length > 0) {
       const { error } = await supabase.from('cheques').insert(data);
