@@ -1,6 +1,5 @@
 import 'dotenv/config';
 import express, { Request, Response } from 'express';
-import { ensureDataDir } from './utils/data';
 import { startScheduler } from './services/scheduler';
 import tenantsRouter from './routes/tenants';
 import propertiesRouter from './routes/properties';
@@ -12,13 +11,10 @@ import reraRouter from './routes/rera';
 import whatsappRouter from './routes/whatsapp';
 import notifyRouter from './routes/notify';
 
-ensureDataDir();
-
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
-// API routes
 app.use('/api/tenants', tenantsRouter);
 app.use('/api/properties', propertiesRouter);
 app.use('/api/cheques', chequesRouter);
@@ -29,7 +25,6 @@ app.use('/api/rera', reraRouter);
 app.use('/api/whatsapp', whatsappRouter);
 app.use('/api/notify', notifyRouter);
 
-// Health check + route listing
 app.get('/health', (_req: Request, res: Response) => {
   res.json({
     status: 'ok',
@@ -68,6 +63,7 @@ app.listen(PORT, () => {
   console.log(`║   Running on http://localhost:${PORT}          ║`);
   console.log('╚════════════════════════════════════════════╝');
   console.log('');
+  console.log('  Storage: Supabase (permanent)');
   console.log('  API endpoints:');
   console.log('  GET  /api/cheques/due         — cheques due in 30 days');
   console.log('  GET  /api/contracts/expiring  — contracts expiring in 120 days');
@@ -75,15 +71,15 @@ app.listen(PORT, () => {
   console.log('  POST /api/chat                — ask in Arabic or English');
   console.log('  POST /api/rera/check          — RERA rent increase calculator');
   console.log('  POST /api/whatsapp/incoming   — Twilio WhatsApp chatbot webhook');
-  console.log('  GET  /api/whatsapp/test-email — send a test email to GMAIL_USER');
+  console.log('  GET  /api/whatsapp/test-email — send a test email');
   console.log('  POST /api/notify/cheques      — WhatsApp alert: cheques due today / in 7 days');
   console.log('  POST /api/notify/contracts    — WhatsApp alert: contracts expiring in 120 days');
   console.log('  POST /api/notify/service-charges — WhatsApp alert: service charges due');
   console.log('  GET  /health                  — all routes');
   console.log('');
   console.log('  Env vars:');
-  console.log(`  GMAIL_USER: ${process.env.GMAIL_USER ? '✓ set' : '✗ NOT SET'}`);
-  console.log(`  GMAIL_PASS: ${process.env.GMAIL_PASS ? '✓ set' : '✗ NOT SET'}`);
+  console.log(`  SUPABASE_URL: ${process.env.SUPABASE_URL ? '✓ set' : '✗ NOT SET'}`);
+  console.log(`  SUPABASE_ANON_KEY: ${process.env.SUPABASE_ANON_KEY ? '✓ set' : '✗ NOT SET'}`);
   console.log(`  ANTHROPIC_API_KEY: ${process.env.ANTHROPIC_API_KEY ? '✓ set' : '✗ NOT SET'}`);
   console.log('');
   startScheduler();

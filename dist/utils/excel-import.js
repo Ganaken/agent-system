@@ -35,13 +35,11 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.importExcelBuffer = importExcelBuffer;
 const XLSX = __importStar(require("xlsx"));
-const uuid_1 = require("uuid");
-const data_1 = require("./data");
-// Normalize a key/field by lowercasing and stripping ALL non-alphanumeric characters
+const crypto_1 = require("crypto");
+const supabase_1 = require("../supabase");
 function normalize(s) {
     return s.toLowerCase().replace(/[^a-z0-9]/g, '');
 }
-// Case-insensitive, punctuation-tolerant field lookup
 function findVal(row, field) {
     const needle = normalize(field);
     for (const key of Object.keys(row)) {
@@ -50,219 +48,217 @@ function findVal(row, field) {
     }
     return undefined;
 }
-function str(row, field) {
-    const val = findVal(row, field);
-    if (val === null || val === undefined)
-        return '';
-    if (val instanceof Date)
-        return val.toISOString().split('T')[0];
-    return String(val).trim();
-}
-function num(row, field) {
-    const val = findVal(row, field);
-    if (typeof val === 'number')
-        return val;
-    const n = parseFloat(String(val ?? '0').replace(/[^0-9.-]/g, ''));
-    return isNaN(n) ? 0 : n;
-}
-function dateStr(row, field) {
-    const val = findVal(row, field);
-    if (val instanceof Date)
-        return val.toISOString().split('T')[0];
-    if (typeof val === 'number' && val > 0) {
-        // Excel serial date: days since 1900-01-01 (25569 days before Unix epoch)
-        const ms = (val - 25569) * 86400 * 1000;
-        return new Date(ms).toISOString().split('T')[0];
-    }
-    if (typeof val === 'string' && val.trim()) {
-        const s = val.trim();
-        // DD/MM/YYYY
-        const dmy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-        if (dmy) {
-            const [, dd, mm, yyyy] = dmy;
-            return `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
+function str(row, ...fields) {
+    for (const f of fields) {
+        const val = findVal(row, f);
+        if (val !== null && val !== undefined && val !== '') {
+            if (val instanceof Date)
+                return val.toISOString().split('T')[0];
+            return String(val).trim();
         }
-        const d = new Date(s);
-        if (!isNaN(d.getTime()))
-            return d.toISOString().split('T')[0];
-        return s;
     }
     return '';
 }
-// Reads a vertically-structured sheet:
-//   Row 1  = title (skip)
-//   Row 2  = headers: "Field", "Record 1", "Record 2", ...
-//   Row 3+ = data: col A = field name, col B/C/D... = values per record
-// Returns one object per record column, with field names as keys.
-function getRows(workbook, sheetName) {
-    const sheet = workbook.Sheets[sheetName];
-    if (!sheet)
-        return [];
-    const raw = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-    // Need at least title row + header row + 1 data row
-    if (raw.length < 3)
-        return [];
-    // raw[0] = title row (skip), raw[1] = header row, raw[2+] = data rows
-    const dataRows = raw.slice(2);
-    // Determine number of record columns from the widest data row
-    const numCols = Math.max(...dataRows.map(r => r.length));
-    const records = [];
-    for (let col = 1; col < numCols; col++) {
-        const record = {};
-        for (const row of dataRows) {
-            const fieldName = String(row[0] ?? '').trim();
-            if (fieldName) {
-                record[fieldName] = row[col] ?? '';
-            }
+function num(row, ...fields) {
+    for (const f of fields) {
+        const val = findVal(row, f);
+        if (typeof val === 'number' && !isNaN(val))
+            return val;
+        if (val !== null && val !== undefined && val !== '') {
+            const n = parseFloat(String(val).replace(/[^0-9.-]/g, ''));
+            if (!isNaN(n))
+                return n;
         }
-        records.push(record);
     }
-    return records;
+    return 0;
 }
-// Reads a horizontally-structured sheet:
-//   Row 1  = title (skip)
-//   Row 2  = headers: col A, col B, col C, ...
-//   Row 3+ = data: one record per row
-// Returns one object per data row, keyed by the header values.
-function getHorizontalRows(workbook, sheetName) {
-    const sheet = workbook.Sheets[sheetName];
+function toISODate(val) {
+    if (val instanceof Date) {
+        return new Date(Date.UTC(val.getUTCFullYear(), val.getUTCMonth(), val.getUTCDate()))
+            .toISOString().split('T')[0];
+    }
+    if (typeof val === 'number' && val > 0) {
+        const d = new Date((val - 25569) * 86400 * 1000);
+        return d.toISOString().split('T')[0];
+    }
+    if (typeof val === 'string' && val.trim()) {
+        const s = val.trim();
+        const dmy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+        if (dmy)
+            return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
+        const dmy2 = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+        if (dmy2)
+            return `${dmy2[3]}-${dmy2[2].padStart(2, '0')}-${dmy2[1].padStart(2, '0')}`;
+        const d = new Date(s);
+        if (!isNaN(d.getTime()))
+            return d.toISOString().split('T')[0];
+    }
+    return '';
+}
+function dateField(row, ...fields) {
+    for (const f of fields) {
+        const val = findVal(row, f);
+        if (val !== null && val !== undefined && val !== '') {
+            const d = toISODate(val);
+            if (d)
+                return d;
+        }
+    }
+    return '';
+}
+function getRows(wb, sheetName) {
+    const sheet = wb.Sheets[sheetName];
     if (!sheet)
         return [];
-    const raw = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-    if (raw.length < 3)
-        return [];
-    const headers = raw[1].map(h => String(h ?? '').trim());
-    const dataRows = raw.slice(2);
-    return dataRows.map(row => {
-        const record = {};
-        headers.forEach((header, i) => {
-            if (header)
-                record[header] = row[i] ?? '';
-        });
-        return record;
-    });
+    const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+    return rows.filter(r => Object.values(r).some(v => v !== '' && v !== null && v !== undefined));
 }
-function resolveSheetName(workbook, target) {
-    return workbook.SheetNames.find(s => s.trim().toLowerCase() === target.toLowerCase());
+function findSheet(wb, target) {
+    if (wb.SheetNames.includes(target))
+        return target;
+    const t = target.toLowerCase().trim();
+    return wb.SheetNames.find(s => s.toLowerCase().trim() === t);
 }
-function importExcelBuffer(buffer) {
+async function importExcelBuffer(buffer) {
     const errors = [];
-    let landlordCount = 0;
-    let propertyCount = 0;
-    let tenantCount = 0;
-    let chequeCount = 0;
-    // Clear all data before import — no merging with existing records
-    (0, data_1.writeJSON)('tenants.json', []);
-    (0, data_1.writeJSON)('properties.json', []);
-    (0, data_1.writeJSON)('cheques.json', []);
-    (0, data_1.writeJSON)('contracts.json', []);
-    const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: true });
-    console.log('[EXCEL IMPORT] Sheets found:', workbook.SheetNames);
-    for (const sheetName of workbook.SheetNames) {
-        const rows = getRows(workbook, sheetName);
-        console.log(`[EXCEL IMPORT] Sheet "${sheetName}": ${rows.length} record columns`);
-        if (rows.length > 0) {
-            console.log(`[EXCEL IMPORT] Sheet "${sheetName}" fields:`, Object.keys(rows[0]));
-            console.log(`[EXCEL IMPORT] Sheet "${sheetName}" first record:`, JSON.stringify(rows[0]));
-        }
-    }
-    // ── Landlords ──────────────────────────────────────────────────────────────
-    // Expected columns: Full Name, Relationship, Email Address, WhatsApp Number, Emirates ID / Passport No.
-    const landlordSheet = resolveSheetName(workbook, 'Landlords');
-    if (landlordSheet) {
-        const rows = getRows(workbook, landlordSheet);
+    // Delete all rows from data tables before import
+    await Promise.all([
+        supabase_1.supabase.from('buildings').delete().not('id', 'is', null),
+        supabase_1.supabase.from('units').delete().not('id', 'is', null),
+        supabase_1.supabase.from('tenants').delete().not('id', 'is', null),
+        supabase_1.supabase.from('cheques').delete().not('id', 'is', null),
+    ]);
+    const wb = XLSX.read(buffer, { type: 'buffer', cellDates: true });
+    console.log('[EXCEL IMPORT] Sheets found:', wb.SheetNames);
+    // ── Buildings ──────────────────────────────────────────────────────────────
+    let buildingCount = 0;
+    const buildingSheet = findSheet(wb, '🏢 Buildings');
+    if (buildingSheet) {
+        const rows = getRows(wb, buildingSheet);
         const data = rows
-            .filter(r => str(r, 'Full Name'))
+            .filter(r => str(r, 'Name', 'Building Name'))
             .map(r => ({
-            id: (0, uuid_1.v4)(),
-            name: str(r, 'Full Name'),
-            relationship: str(r, 'Relationship'),
-            email: str(r, 'Email Address'),
-            whatsapp: str(r, 'WhatsApp Number'),
-            emiratesId: str(r, 'Emirates ID / Passport No.'),
-        }));
-        (0, data_1.writeJSON)('landlords.json', data);
-        landlordCount = data.length;
-        console.log(`[EXCEL IMPORT] Landlords imported: ${landlordCount}`);
-    }
-    else {
-        errors.push('Sheet "Landlords" not found');
-    }
-    // ── Properties ─────────────────────────────────────────────────────────────
-    // Expected columns: Building Name, Unit Number, Area / Location, Type, Landlord Name, Service Charge (AED/year), Notes
-    const propertySheet = resolveSheetName(workbook, 'Properties');
-    if (propertySheet) {
-        const rows = getRows(workbook, propertySheet);
-        const data = rows
-            .filter(r => str(r, 'Building Name') || str(r, 'Unit Number'))
-            .map(r => ({
-            id: (0, uuid_1.v4)(),
-            buildingName: str(r, 'Building Name'),
-            unitNumber: str(r, 'Unit Number'),
-            area: str(r, 'Area / Location'),
+            id: (0, crypto_1.randomUUID)(),
+            name: str(r, 'Name', 'Building Name'),
+            location: str(r, 'Location'),
+            total_units: Math.round(num(r, 'Total Units', 'Units')),
             type: str(r, 'Type'),
-            landlordName: str(r, 'Landlord Name'),
-            serviceCharge: num(r, 'Service Charge (AED/year)'),
+            developer: str(r, 'Developer'),
             notes: str(r, 'Notes'),
         }));
-        (0, data_1.writeJSON)('properties.json', data);
-        propertyCount = data.length;
-        console.log(`[EXCEL IMPORT] Properties imported: ${propertyCount}`);
+        if (data.length > 0) {
+            const { error } = await supabase_1.supabase.from('buildings').insert(data);
+            if (error)
+                errors.push(`Buildings: ${error.message}`);
+            else
+                buildingCount = data.length;
+        }
+        console.log(`[EXCEL IMPORT] Buildings: ${buildingCount}`);
     }
     else {
-        errors.push('Sheet "Properties" not found');
+        errors.push('Sheet "🏢 Buildings" not found');
+    }
+    // ── Units ──────────────────────────────────────────────────────────────────
+    let unitCount = 0;
+    const unitSheet = findSheet(wb, '🏠 Units');
+    if (unitSheet) {
+        const rows = getRows(wb, unitSheet);
+        const data = rows
+            .filter(r => str(r, 'Unit Number', 'Unit No') || str(r, 'Building Name'))
+            .map(r => ({
+            id: (0, crypto_1.randomUUID)(),
+            building_name: str(r, 'Building Name', 'Building'),
+            unit_number: str(r, 'Unit Number', 'Unit No', 'Unit'),
+            type: str(r, 'Type'),
+            area_sqm: num(r, 'Area (sqm)', 'Area sqm', 'Area'),
+            floor: Math.round(num(r, 'Floor')),
+            annual_rent: num(r, 'Annual Rent (AED)', 'Annual Rent', 'Rent'),
+            service_charge: num(r, 'Service Charge (AED)', 'Service Charge', 'SC'),
+            notes: str(r, 'Notes'),
+        }));
+        if (data.length > 0) {
+            const { error } = await supabase_1.supabase.from('units').insert(data);
+            if (error)
+                errors.push(`Units: ${error.message}`);
+            else
+                unitCount = data.length;
+        }
+        console.log(`[EXCEL IMPORT] Units: ${unitCount}`);
+    }
+    else {
+        errors.push('Sheet "🏠 Units" not found');
     }
     // ── Tenants ────────────────────────────────────────────────────────────────
-    // Expected columns: Full Name, Email Address, WhatsApp Number, Property / Unit, Landlord Name,
-    //   Contract Start (DD/MM/YYYY), Contract End (DD/MM/YYYY), Annual Rent (AED), Number of Cheques, Emirates ID, Notes
-    const tenantSheet = resolveSheetName(workbook, 'Tenants');
+    let tenantCount = 0;
+    const tenantSheet = findSheet(wb, '👤 Tenants');
     if (tenantSheet) {
-        const rows = getRows(workbook, tenantSheet);
+        const rows = getRows(wb, tenantSheet);
         const data = rows
-            .filter(r => str(r, 'Full Name'))
+            .filter(r => str(r, 'Full Name', 'Name'))
             .map(r => ({
-            id: (0, uuid_1.v4)(),
-            name: str(r, 'Full Name'),
-            email: str(r, 'Email Address'),
-            whatsapp: str(r, 'WhatsApp Number'),
-            property: str(r, 'Property / Unit'),
-            landlordName: str(r, 'Landlord Name'),
-            contractStart: dateStr(r, 'Contract Start Date (DD/MM/YYYY)'),
-            contractEnd: dateStr(r, 'Contract End Date (DD/MM/YYYY)'),
-            annualRent: num(r, 'Annual Rent (AED)'),
-            numberOfCheques: Math.round(num(r, 'Number of Cheques')),
-            emiratesId: str(r, 'Emirates ID'),
+            id: (0, crypto_1.randomUUID)(),
+            full_name: str(r, 'Full Name', 'Name'),
+            building_name: str(r, 'Building Name', 'Building'),
+            unit_number: str(r, 'Unit Number', 'Unit No', 'Unit'),
+            email: str(r, 'Email', 'Email Address'),
+            phone: str(r, 'Phone', 'Phone Number', 'WhatsApp'),
+            nationality: str(r, 'Nationality'),
+            contract_start: dateField(r, 'Contract Start', 'Contract Start Date', 'Start Date'),
+            contract_end: dateField(r, 'Contract End', 'Contract End Date', 'End Date'),
+            number_of_cheques: Math.round(num(r, 'Number of Cheques', 'Cheques', 'No of Cheques')),
             notes: str(r, 'Notes'),
+            status: str(r, 'Status') || 'active',
         }));
-        (0, data_1.writeJSON)('tenants.json', data);
-        tenantCount = data.length;
-        console.log(`[EXCEL IMPORT] Tenants imported: ${tenantCount}`);
+        if (data.length > 0) {
+            const { error } = await supabase_1.supabase.from('tenants').insert(data);
+            if (error)
+                errors.push(`Tenants: ${error.message}`);
+            else
+                tenantCount = data.length;
+        }
+        console.log(`[EXCEL IMPORT] Tenants: ${tenantCount}`);
     }
     else {
-        errors.push('Sheet "Tenants" not found');
+        errors.push('Sheet "👤 Tenants" not found');
     }
     // ── Cheques ────────────────────────────────────────────────────────────────
-    // Horizontal layout: Row 1 = title, Row 2 = headers, Row 3+ = one cheque per row
-    // Columns: # (skip), Tenant Name, Property / Unit, Amount (AED), Due Date (DD/MM/YYYY)
-    const chequeSheet = resolveSheetName(workbook, 'Cheques');
+    let chequeCount = 0;
+    const chequeSheet = findSheet(wb, '🧾 Cheques');
     if (chequeSheet) {
-        const rows = getHorizontalRows(workbook, chequeSheet);
+        const rows = getRows(wb, chequeSheet);
         const data = rows
-            .filter(r => str(r, 'Tenant Name'))
+            .filter(r => str(r, 'Tenant Name', 'Tenant'))
             .map(r => ({
-            id: (0, uuid_1.v4)(),
-            tenantName: str(r, 'Tenant Name'),
-            property: str(r, 'Property / Unit'),
-            amount: num(r, 'Amount (AED)'),
-            dueDate: dateStr(r, 'Due Date (DD/MM/YYYY)'),
+            id: (0, crypto_1.randomUUID)(),
+            tenant_name: str(r, 'Tenant Name', 'Tenant'),
+            building_name: str(r, 'Building Name', 'Building'),
+            unit_number: str(r, 'Unit Number', 'Unit No', 'Unit'),
+            amount: num(r, 'Amount (AED)', 'Cheque Amount (AED)', 'Amount', 'Cheque Amount'),
+            due_date: dateField(r, 'Due Date', 'Date'),
+            bank_name: str(r, 'Bank Name', 'Bank'),
+            cheque_number: str(r, 'Cheque Number', 'Cheque No', 'Cheque #'),
+            status: 'pending',
+            reminder_sent_7: false,
+            reminder_sent_1: false,
         }));
-        (0, data_1.writeJSON)('cheques.json', data);
-        chequeCount = data.length;
-        console.log(`[EXCEL IMPORT] Cheques imported: ${chequeCount}`);
+        if (data.length > 0) {
+            const { error } = await supabase_1.supabase.from('cheques').insert(data);
+            if (error)
+                errors.push(`Cheques: ${error.message}`);
+            else
+                chequeCount = data.length;
+        }
+        console.log(`[EXCEL IMPORT] Cheques: ${chequeCount}`);
     }
     else {
-        errors.push('Sheet "Cheques" not found');
+        errors.push('Sheet "🧾 Cheques" not found');
     }
-    return { landlords: landlordCount, properties: propertyCount, tenants: tenantCount, cheques: chequeCount, errors };
+    // ── Owner Details (log only) ───────────────────────────────────────────────
+    const ownerSheet = findSheet(wb, '⚙️ Your Details');
+    if (ownerSheet) {
+        const rows = getRows(wb, ownerSheet);
+        console.log(`[EXCEL IMPORT] Owner details sheet found — ${rows.length} rows (not imported)`);
+    }
+    return { buildings: buildingCount, units: unitCount, tenants: tenantCount, cheques: chequeCount, errors };
 }
 //# sourceMappingURL=excel-import.js.map

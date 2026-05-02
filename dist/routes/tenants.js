@@ -2,28 +2,41 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const crypto_1 = require("crypto");
-const data_1 = require("../utils/data");
+const supabase_1 = require("../supabase");
 const router = (0, express_1.Router)();
-router.get('/', (_req, res) => {
-    res.json((0, data_1.getTenants)());
+router.get('/', async (_req, res) => {
+    const { data, error } = await supabase_1.supabase.from('tenants').select('*').order('full_name', { ascending: true });
+    if (error) {
+        res.status(500).json({ error: error.message });
+        return;
+    }
+    res.json(data ?? []);
 });
-router.post('/', (req, res) => {
-    const tenants = (0, data_1.getTenants)();
-    const tenant = { id: (0, crypto_1.randomUUID)(), ...req.body };
-    tenants.push(tenant);
-    (0, data_1.saveTenants)(tenants);
-    res.status(201).json(tenant);
+router.post('/', async (req, res) => {
+    const tenant = { id: (0, crypto_1.randomUUID)(), status: 'active', ...req.body };
+    const { data, error } = await supabase_1.supabase.from('tenants').insert(tenant).select().single();
+    if (error) {
+        res.status(500).json({ error: error.message });
+        return;
+    }
+    res.status(201).json(data);
 });
-router.delete('/:id', (req, res) => {
-    const tenants = (0, data_1.getTenants)();
-    const idx = tenants.findIndex(t => t.id === req.params['id']);
-    if (idx === -1) {
+router.delete('/:id', async (req, res) => {
+    const { data, error } = await supabase_1.supabase
+        .from('tenants')
+        .delete()
+        .eq('id', req.params['id'])
+        .select()
+        .single();
+    if (error) {
+        res.status(500).json({ error: error.message });
+        return;
+    }
+    if (!data) {
         res.status(404).json({ error: 'Not found' });
         return;
     }
-    const [removed] = tenants.splice(idx, 1);
-    (0, data_1.saveTenants)(tenants);
-    res.json(removed);
+    res.json(data);
 });
 exports.default = router;
 //# sourceMappingURL=tenants.js.map

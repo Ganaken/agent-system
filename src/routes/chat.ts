@@ -5,17 +5,12 @@ import { sendEmail } from '../services/email';
 
 const router = Router();
 
-// ─── Tool: send_email ─────────────────────────────────────────────────────────
-
 async function toolSendEmail(to: string, subject: string, body: string): Promise<string> {
   try {
     await sendEmail(to, subject, body);
-    console.log(`EMAIL SENT TO: ${to}`);
     return `✅ Email sent to ${to}`;
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error(`EMAIL ERROR: ${msg}`);
-    return `❌ Email failed: ${msg}`;
+    return `❌ Email failed: ${err instanceof Error ? err.message : String(err)}`;
   }
 }
 
@@ -35,8 +30,6 @@ const TOOLS: Anthropic.Tool[] = [
   },
 ];
 
-// ─── Route ────────────────────────────────────────────────────────────────────
-
 router.post('/', async (req: Request, res: Response) => {
   try {
     const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -47,48 +40,37 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     const today = new Date().toISOString().split('T')[0];
-    const data = allData();
+    const data = await allData();
 
     const annotatedCheques = data.cheques
-      .map(c => ({
-        ...c,
-        daysUntilDue: daysUntil(c.chequeDate),
-      }))
+      .map(c => ({ ...c, daysUntilDue: daysUntil(c.due_date) }))
       .sort((a, b) => a.daysUntilDue - b.daysUntilDue);
 
-    const nextCheque = annotatedCheques.find(
-      c => c.status === 'pending' && c.daysUntilDue >= 0,
-    ) ?? null;
-    const annotatedContracts = data.contracts.map(c => ({
-      ...c,
-      daysUntilExpiry: daysUntil(c.endDate),
-    }));
-    const annotatedCharges = data.serviceCharges.map(c => ({
-      ...c,
-      daysUntilDue: daysUntil(c.nextDueDate),
+    const nextCheque = annotatedCheques.find(c => c.status === 'pending' && c.daysUntilDue >= 0) ?? null;
+
+    const annotatedTenants = data.tenants.map(t => ({
+      ...t,
+      daysUntilExpiry: daysUntil(t.contract_end),
     }));
 
     const systemPrompt = `You are a smart property management assistant for a Dubai landlord. Today is ${today}.
 
 You have full access to the landlord's data:
 
-PROPERTIES:
-${JSON.stringify(data.properties, null, 2)}
+BUILDINGS:
+${JSON.stringify(data.buildings, null, 2)}
 
-TENANTS:
-${JSON.stringify(data.tenants, null, 2)}
+UNITS (includes annual_rent and service_charge):
+${JSON.stringify(data.units, null, 2)}
+
+TENANTS (includes contract_start, contract_end — contracts are embedded in tenants):
+${JSON.stringify(annotatedTenants, null, 2)}
 
 NEXT CHEQUE DUE (pending, soonest from today):
 ${nextCheque ? JSON.stringify(nextCheque, null, 2) : 'None'}
 
 ALL CHEQUES (sorted by daysUntilDue ascending — soonest first; negative = overdue):
 ${JSON.stringify(annotatedCheques, null, 2)}
-
-CONTRACTS (daysUntilExpiry = days from today):
-${JSON.stringify(annotatedContracts, null, 2)}
-
-SERVICE CHARGES (daysUntilDue = days from today; negative = overdue):
-${JSON.stringify(annotatedCharges, null, 2)}
 
 RULES:
 - Detect the language of the user's question and reply in the SAME language.
@@ -99,12 +81,11 @@ RULES:
 - Reference tenant names, unit numbers, and dates clearly.
 - For rent increase questions, cite Dubai RERA Decree 43/2013 rules.
 - Today is ${today}.
-- NEXT CHEQUE: When asked for "the next cheque" or "next due cheque", always use the NEXT CHEQUE DUE field above — never infer from the full list.
-- EMAIL: When asked to send an email, you MUST call the send_email tool with the recipient's actual email address from the tenant data. Never just say you will send it — call the tool.`;
+- NEXT CHEQUE: When asked for "the next cheque" or "next due cheque", always use the NEXT CHEQUE DUE field above — the single cheque with soonest due_date >= today.
+- EMAIL: When asked to send an email, call the send_email tool with the recipient's actual email address. Never just say you will send it.`;
 
     const messages: Anthropic.MessageParam[] = [{ role: 'user', content: message }];
 
-    // First call — Claude may request tool use
     const firstResponse = await client.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 1024,
@@ -113,14 +94,12 @@ RULES:
       messages,
     });
 
-    // No tool call — return text directly
     if (firstResponse.stop_reason !== 'tool_use') {
       const answer = firstResponse.content[0].type === 'text' ? firstResponse.content[0].text : '';
       res.json({ answer, model: firstResponse.model, usage: firstResponse.usage });
       return;
     }
 
-    // Execute tool calls
     const toolResults: Anthropic.ToolResultBlockParam[] = [];
 
     for (const block of firstResponse.content) {
@@ -129,11 +108,7 @@ RULES:
       let result: string;
 
       if (block.name === 'send_email') {
-        result = await toolSendEmail(
-          input.to as string,
-          input.subject as string,
-          input.body as string,
-        );
+        result = await toolSendEmail(input.to as string, input.subject as string, input.body as string);
       } else {
         result = `Unknown tool: ${block.name}`;
       }
@@ -142,7 +117,6 @@ RULES:
       toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: result });
     }
 
-    // Second call with tool results — Claude confirms the outcome
     const secondResponse = await client.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 512,
@@ -156,9 +130,7 @@ RULES:
     });
 
     const textBlock = secondResponse.content.find(b => b.type === 'text');
-    const answer = textBlock?.type === 'text'
-      ? textBlock.text
-      : toolResults.map(r => r.content).join('\n');
+    const answer = textBlock?.type === 'text' ? textBlock.text : toolResults.map(r => r.content).join('\n');
 
     res.json({ answer, model: secondResponse.model, usage: secondResponse.usage });
   } catch (err: unknown) {

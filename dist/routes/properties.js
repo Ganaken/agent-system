@@ -2,28 +2,41 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const crypto_1 = require("crypto");
-const data_1 = require("../utils/data");
+const supabase_1 = require("../supabase");
 const router = (0, express_1.Router)();
-router.get('/', (_req, res) => {
-    res.json((0, data_1.getProperties)());
+router.get('/', async (_req, res) => {
+    const { data, error } = await supabase_1.supabase.from('buildings').select('*').order('name', { ascending: true });
+    if (error) {
+        res.status(500).json({ error: error.message });
+        return;
+    }
+    res.json(data ?? []);
 });
-router.post('/', (req, res) => {
-    const properties = (0, data_1.getProperties)();
-    const property = { id: (0, crypto_1.randomUUID)(), ...req.body };
-    properties.push(property);
-    (0, data_1.saveProperties)(properties);
-    res.status(201).json(property);
+router.post('/', async (req, res) => {
+    const building = { id: (0, crypto_1.randomUUID)(), ...req.body };
+    const { data, error } = await supabase_1.supabase.from('buildings').insert(building).select().single();
+    if (error) {
+        res.status(500).json({ error: error.message });
+        return;
+    }
+    res.status(201).json(data);
 });
-router.delete('/:id', (req, res) => {
-    const properties = (0, data_1.getProperties)();
-    const idx = properties.findIndex(p => p.id === req.params['id']);
-    if (idx === -1) {
+router.delete('/:id', async (req, res) => {
+    const { data, error } = await supabase_1.supabase
+        .from('buildings')
+        .delete()
+        .eq('id', req.params['id'])
+        .select()
+        .single();
+    if (error) {
+        res.status(500).json({ error: error.message });
+        return;
+    }
+    if (!data) {
         res.status(404).json({ error: 'Not found' });
         return;
     }
-    const [removed] = properties.splice(idx, 1);
-    (0, data_1.saveProperties)(properties);
-    res.json(removed);
+    res.json(data);
 });
 exports.default = router;
 //# sourceMappingURL=properties.js.map

@@ -1,7 +1,9 @@
-export declare function loadHistory(phone: string): Array<{
+type Message = {
     role: 'user' | 'assistant';
     content: string;
-}>;
-export declare function saveHistory(phone: string, userMessage: string, assistantMessage: string): void;
-export declare function cleanExpiredConversations(): void;
+};
+export declare function loadHistory(phone: string): Promise<Message[]>;
+export declare function saveHistory(phone: string, userMessage: string, assistantMessage: string): Promise<void>;
+export declare function cleanExpiredConversations(): Promise<void>;
+export {};
 //# sourceMappingURL=conversation.d.ts.map

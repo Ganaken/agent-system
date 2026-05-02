@@ -2,52 +2,76 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const crypto_1 = require("crypto");
-const data_1 = require("../utils/data");
+const supabase_1 = require("../supabase");
 const router = (0, express_1.Router)();
-router.get('/', (_req, res) => {
-    res.json((0, data_1.getServiceCharges)());
+// Service charges are stored as service_charge field on units
+router.get('/', async (_req, res) => {
+    const { data, error } = await supabase_1.supabase
+        .from('units')
+        .select('*')
+        .gt('service_charge', 0)
+        .order('building_name', { ascending: true });
+    if (error) {
+        res.status(500).json({ error: error.message });
+        return;
+    }
+    res.json(data ?? []);
 });
-// GET /api/service-charges/due — service charges due within 30 days (or overdue)
-router.get('/due', (_req, res) => {
-    const charges = (0, data_1.getServiceCharges)();
-    const due = charges
-        .filter(c => (0, data_1.daysUntil)(c.nextDueDate) <= 30)
-        .map(c => ({ ...c, daysUntil: (0, data_1.daysUntil)(c.nextDueDate) }))
-        .sort((a, b) => a.daysUntil - b.daysUntil);
-    res.json(due);
+// GET /api/service-charges/due — all units with service charges
+router.get('/due', async (_req, res) => {
+    const { data, error } = await supabase_1.supabase
+        .from('units')
+        .select('*')
+        .gt('service_charge', 0)
+        .order('service_charge', { ascending: false });
+    if (error) {
+        res.status(500).json({ error: error.message });
+        return;
+    }
+    res.json(data ?? []);
 });
-router.post('/', (req, res) => {
-    const charges = (0, data_1.getServiceCharges)();
-    const charge = {
-        id: (0, crypto_1.randomUUID)(),
-        frequency: 'quarterly',
-        ...req.body,
-    };
-    charges.push(charge);
-    (0, data_1.saveServiceCharges)(charges);
-    res.status(201).json(charge);
+router.post('/', async (req, res) => {
+    const unit = { id: (0, crypto_1.randomUUID)(), ...req.body };
+    const { data, error } = await supabase_1.supabase.from('units').insert(unit).select().single();
+    if (error) {
+        res.status(500).json({ error: error.message });
+        return;
+    }
+    res.status(201).json(data);
 });
-router.patch('/:id', (req, res) => {
-    const charges = (0, data_1.getServiceCharges)();
-    const charge = charges.find(c => c.id === req.params['id']);
-    if (!charge) {
+router.patch('/:id', async (req, res) => {
+    const { data, error } = await supabase_1.supabase
+        .from('units')
+        .update(req.body)
+        .eq('id', req.params['id'])
+        .select()
+        .single();
+    if (error) {
+        res.status(500).json({ error: error.message });
+        return;
+    }
+    if (!data) {
         res.status(404).json({ error: 'Not found' });
         return;
     }
-    Object.assign(charge, req.body);
-    (0, data_1.saveServiceCharges)(charges);
-    res.json(charge);
+    res.json(data);
 });
-router.delete('/:id', (req, res) => {
-    const charges = (0, data_1.getServiceCharges)();
-    const idx = charges.findIndex(c => c.id === req.params['id']);
-    if (idx === -1) {
+router.delete('/:id', async (req, res) => {
+    const { data, error } = await supabase_1.supabase
+        .from('units')
+        .delete()
+        .eq('id', req.params['id'])
+        .select()
+        .single();
+    if (error) {
+        res.status(500).json({ error: error.message });
+        return;
+    }
+    if (!data) {
         res.status(404).json({ error: 'Not found' });
         return;
     }
-    const [removed] = charges.splice(idx, 1);
-    (0, data_1.saveServiceCharges)(charges);
-    res.json(removed);
+    res.json(data);
 });
 exports.default = router;
 //# sourceMappingURL=service-charges.js.map

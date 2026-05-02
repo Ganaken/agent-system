@@ -2,9 +2,7 @@ import { Router, Request, Response } from 'express';
 import Anthropic from '@anthropic-ai/sdk';
 import https from 'https';
 import http from 'http';
-import fs from 'fs';
-import path from 'path';
-import { allData, daysUntil, getTenants, getContracts, getProperties } from '../utils/data';
+import { allData, daysUntil, getTenants, getUnits } from '../utils/data';
 import { loadHistory, saveHistory, cleanExpiredConversations } from '../utils/conversation';
 import { sendEmail } from '../services/email';
 import { calculateRentIncrease } from '../services/rera';
@@ -12,23 +10,9 @@ import { importExcelBuffer } from '../utils/excel-import';
 
 const router = Router();
 
-// ─── Config (reminder threshold) ─────────────────────────────────────────────
+// ─── Config (in-memory, resets on restart) ────────────────────────────────────
 
-const CONFIG_PATH = path.resolve(process.cwd(), process.env.DATA_DIR || './data', 'config.json');
-
-interface AppConfig {
-  renewalReminderDays: number;
-}
-
-function getConfig(): AppConfig {
-  if (!fs.existsSync(CONFIG_PATH)) return { renewalReminderDays: 90 };
-  try { return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8')) as AppConfig; }
-  catch { return { renewalReminderDays: 90 }; }
-}
-
-function saveConfig(cfg: AppConfig): void {
-  fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2), 'utf-8');
-}
+let renewalReminderDays = 90;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -50,13 +34,6 @@ function formatDate(dateStr: string): string {
   return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-function normalizeWhatsApp(phone: string): string {
-  const digits = phone.replace(/\D/g, '');
-  if (digits.startsWith('971')) return `whatsapp:+${digits}`;
-  if (digits.startsWith('0')) return `whatsapp:+971${digits.slice(1)}`;
-  return `whatsapp:+971${digits}`;
-}
-
 // ─── Media download ───────────────────────────────────────────────────────────
 
 function downloadTwilioMedia(mediaUrl: string): Promise<Buffer> {
@@ -69,7 +46,6 @@ function downloadTwilioMedia(mediaUrl: string): Promise<Buffer> {
     const lib = parsed.protocol === 'https:' ? https : http;
 
     const req = lib.get(mediaUrl, { headers: { Authorization: `Basic ${auth}` } }, res => {
-      // Follow up to 3 redirects
       if ((res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 307) && res.headers.location) {
         downloadTwilioMedia(res.headers.location).then(resolve).catch(reject);
         return;
@@ -90,25 +66,19 @@ function downloadTwilioMedia(mediaUrl: string): Promise<Buffer> {
 // ─── Tool implementations ─────────────────────────────────────────────────────
 
 async function toolSendRenewalNotice(tenantName: string, increasePercent: number): Promise<string> {
-  const tenants = getTenants();
-  const contracts = getContracts();
-  const properties = getProperties();
+  const tenants = await getTenants();
+  const units = await getUnits();
 
-  const tenant = tenants.find(t => t.name.toLowerCase().includes(tenantName.toLowerCase()));
+  const tenant = tenants.find(t => t.full_name.toLowerCase().includes(tenantName.toLowerCase()));
   if (!tenant) return `Tenant "${tenantName}" not found in database.`;
-  if (!tenant.email) return `No email address on file for ${tenant.name}.`;
+  if (!tenant.email) return `No email address on file for ${tenant.full_name}.`;
 
-  const contract = contracts.find(c => c.tenantId === tenant.id && c.status === 'active');
-  if (!contract) return `No active contract found for ${tenant.name}.`;
-
-  const property = properties.find(p => p.id === contract.propertyId);
-  const unitLabel = property
-    ? `Unit ${contract.unit} - ${property.building}`
-    : `Unit ${contract.unit}`;
-
-  const newRent = Math.round(contract.rentAmount * (1 + increasePercent / 100));
-  const endDate = formatDate(contract.endDate);
-  const days = daysUntil(contract.endDate);
+  const unit = units.find(u => u.building_name === tenant.building_name && u.unit_number === tenant.unit_number);
+  const annualRent = unit?.annual_rent ?? 0;
+  const unitLabel = `Unit ${tenant.unit_number} - ${tenant.building_name}`;
+  const newRent = Math.round(annualRent * (1 + increasePercent / 100));
+  const endDate = formatDate(tenant.contract_end);
+  const days = daysUntil(tenant.contract_end);
 
   const html = `
 <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;border:1px solid #ddd;border-radius:8px;overflow:hidden">
@@ -117,15 +87,15 @@ async function toolSendRenewalNotice(tenantName: string, increasePercent: number
     <p style="margin:4px 0 0">${unitLabel} — ${days} days remaining</p>
   </div>
   <div style="padding:24px">
-    <p>Dear <b>${tenant.name}</b>,</p>
+    <p>Dear <b>${tenant.full_name}</b>,</p>
     <p>Your tenancy contract for <b>${unitLabel}</b> will expire in <b>${days} days</b> on <b>${endDate}</b>.</p>
-    <p>Current rent: <b>AED ${contract.rentAmount.toLocaleString()}</b>/year</p>
+    <p>Current rent: <b>AED ${annualRent.toLocaleString()}</b>/year</p>
     <p>New rent: <b>AED ${newRent.toLocaleString()}</b>/year (${increasePercent}% increase)</p>
     <p>Please contact us to confirm renewal.</p>
     <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
-    <p>عزيزي <b>${tenant.name}</b>،</p>
+    <p>عزيزي <b>${tenant.full_name}</b>،</p>
     <p>ينتهي عقد إيجارك للوحدة <b>${unitLabel}</b> خلال <b>${days} يوماً</b> بتاريخ <b>${endDate}</b>.</p>
-    <p>الإيجار الحالي: <b>AED ${contract.rentAmount.toLocaleString()}</b>/سنة</p>
+    <p>الإيجار الحالي: <b>AED ${annualRent.toLocaleString()}</b>/سنة</p>
     <p>الإيجار الجديد: <b>AED ${newRent.toLocaleString()}</b>/سنة (زيادة ${increasePercent}%)</p>
     <p>يرجى التواصل معنا لتأكيد التجديد.</p>
   </div>
@@ -133,34 +103,25 @@ async function toolSendRenewalNotice(tenantName: string, increasePercent: number
 
   try {
     await sendEmail(tenant.email, 'Contract Renewal Notice | إشعار تجديد العقد', html);
-    console.log(`EMAIL SENT TO: ${tenant.email}`);
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error(`EMAIL ERROR: ${msg}`);
-    return `❌ Email failed: ${msg}`;
+    return `❌ Email failed: ${err instanceof Error ? err.message : String(err)}`;
   }
-  return `✅ Renewal notice emailed to ${tenant.name} (${tenant.email})`;
+  return `✅ Renewal notice emailed to ${tenant.full_name} (${tenant.email})`;
 }
 
 async function toolSendReminderToTenant(tenantName: string): Promise<string> {
-  const tenants = getTenants();
-  const contracts = getContracts();
-  const properties = getProperties();
+  const tenants = await getTenants();
+  const units = await getUnits();
 
-  const tenant = tenants.find(t => t.name.toLowerCase().includes(tenantName.toLowerCase()));
+  const tenant = tenants.find(t => t.full_name.toLowerCase().includes(tenantName.toLowerCase()));
   if (!tenant) return `Tenant "${tenantName}" not found in database.`;
-  if (!tenant.email) return `No email address on file for ${tenant.name}.`;
+  if (!tenant.email) return `No email address on file for ${tenant.full_name}.`;
 
-  const contract = contracts.find(c => c.tenantId === tenant.id && c.status === 'active');
-  if (!contract) return `No active contract found for ${tenant.name}.`;
-
-  const property = properties.find(p => p.id === contract.propertyId);
-  const unitLabel = property
-    ? `Unit ${contract.unit} - ${property.building}`
-    : `Unit ${contract.unit}`;
-
-  const days = daysUntil(contract.endDate);
-  const endDate = formatDate(contract.endDate);
+  const unit = units.find(u => u.building_name === tenant.building_name && u.unit_number === tenant.unit_number);
+  const annualRent = unit?.annual_rent ?? 0;
+  const unitLabel = `Unit ${tenant.unit_number} - ${tenant.building_name}`;
+  const days = daysUntil(tenant.contract_end);
+  const endDate = formatDate(tenant.contract_end);
   const urgencyColor = days <= 30 ? '#c0392b' : days <= 60 ? '#e67e22' : '#2980b9';
   const urgencyLabel = days <= 30 ? '🚨 URGENT' : days <= 60 ? '⚠️ Soon' : '📋 Upcoming';
 
@@ -171,84 +132,69 @@ async function toolSendReminderToTenant(tenantName: string): Promise<string> {
     <p style="margin:4px 0 0">تذكير بتجديد العقد</p>
   </div>
   <div style="padding:24px">
-    <p>Dear <b>${tenant.name}</b>,</p>
+    <p>Dear <b>${tenant.full_name}</b>,</p>
     <p>Your tenancy contract for <b>${unitLabel}</b> ends in <b>${days} days</b> on <b>${endDate}</b>.</p>
-    <p>Rent: <b>AED ${contract.rentAmount.toLocaleString()}</b>/year</p>
+    <p>Rent: <b>AED ${annualRent.toLocaleString()}</b>/year</p>
     <p>Please contact your landlord to discuss renewal terms.</p>
     <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
-    <p>عزيزي <b>${tenant.name}</b>،</p>
+    <p>عزيزي <b>${tenant.full_name}</b>،</p>
     <p>ينتهي عقد إيجارك للوحدة <b>${unitLabel}</b> خلال <b>${days} يوماً</b> بتاريخ <b>${endDate}</b>.</p>
-    <p>الإيجار: <b>AED ${contract.rentAmount.toLocaleString()}</b>/سنة</p>
+    <p>الإيجار: <b>AED ${annualRent.toLocaleString()}</b>/سنة</p>
     <p>يرجى التواصل مع المالك لمناقشة شروط التجديد.</p>
   </div>
 </div>`;
 
   try {
     await sendEmail(tenant.email, 'Contract Renewal Reminder | تذكير بتجديد العقد', html);
-    console.log(`EMAIL SENT TO: ${tenant.email}`);
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error(`EMAIL ERROR: ${msg}`);
-    return `❌ Email failed: ${msg}`;
+    return `❌ Email failed: ${err instanceof Error ? err.message : String(err)}`;
   }
-  return `✅ Reminder emailed to ${tenant.name} (${tenant.email})`;
+  return `✅ Reminder emailed to ${tenant.full_name} (${tenant.email})`;
 }
 
 async function toolSendEmailToTenant(tenantName: string, subject: string, bodyHtml: string): Promise<string> {
-  const tenants = getTenants();
-  const tenant = tenants.find(t => t.name.toLowerCase().includes(tenantName.toLowerCase()));
+  const tenants = await getTenants();
+  const tenant = tenants.find(t => t.full_name.toLowerCase().includes(tenantName.toLowerCase()));
   if (!tenant) return `Tenant "${tenantName}" not found in database.`;
-  if (!tenant.email) return `No email address on file for ${tenant.name}.`;
+  if (!tenant.email) return `No email address on file for ${tenant.full_name}.`;
 
   try {
     await sendEmail(tenant.email, subject, bodyHtml);
-    console.log(`EMAIL SENT TO: ${tenant.email}`);
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error(`EMAIL ERROR: ${msg}`);
-    return `❌ Email failed: ${msg}`;
+    return `❌ Email failed: ${err instanceof Error ? err.message : String(err)}`;
   }
-  return `✅ Email sent to ${tenant.name} (${tenant.email})`;
+  return `✅ Email sent to ${tenant.full_name} (${tenant.email})`;
 }
 
 function toolUpdateReminderThreshold(days: number): string {
-  const cfg = getConfig();
-  cfg.renewalReminderDays = days;
-  saveConfig(cfg);
+  renewalReminderDays = days;
   return `✅ Reminder threshold set to ${days} days before contract end.`;
 }
 
 async function toolSendEmail(to: string, subject: string, body: string): Promise<string> {
   try {
     await sendEmail(to, subject, body);
-    console.log(`EMAIL SENT TO: ${to}`);
     return `✅ Email sent to ${to}`;
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error(`EMAIL ERROR: ${msg}`);
-    return `❌ Email failed: ${msg}`;
+    return `❌ Email failed: ${err instanceof Error ? err.message : String(err)}`;
   }
 }
 
-function toolCheckRERA(tenantName: string, marketRent?: number): string {
-  const tenants = getTenants();
-  const contracts = getContracts();
-  const properties = getProperties();
+async function toolCheckRERA(tenantName: string, marketRent?: number): Promise<string> {
+  const tenants = await getTenants();
+  const units = await getUnits();
 
-  const tenant = tenants.find(t => t.name.toLowerCase().includes(tenantName.toLowerCase()));
+  const tenant = tenants.find(t => t.full_name.toLowerCase().includes(tenantName.toLowerCase()));
   if (!tenant) return `Tenant "${tenantName}" not found in database.`;
 
-  const contract = contracts.find(c => c.tenantId === tenant.id && c.status === 'active');
-  if (!contract) return `No active contract found for ${tenant.name}.`;
-
-  const property = properties.find(p => p.id === contract.propertyId);
-  const area = property?.area ?? 'Dubai';
-  const current = contract.rentAmount;
+  const unit = units.find(u => u.building_name === tenant.building_name && u.unit_number === tenant.unit_number);
+  const current = unit?.annual_rent ?? 0;
+  const area = tenant.building_name ?? 'Dubai';
 
   if (!marketRent) {
     return [
-      `📊 RERA Rent Increase — ${tenant.name}`,
-      `🏠 Unit ${contract.unit} | ${area}`,
+      `📊 RERA Rent Increase — ${tenant.full_name}`,
+      `🏠 Unit ${tenant.unit_number} | ${area}`,
       `💰 Current rent: AED ${current.toLocaleString()}/year`,
       ``,
       `Dubai Decree 43/2013 — Max increases:`,
@@ -264,8 +210,8 @@ function toolCheckRERA(tenantName: string, marketRent?: number): string {
 
   const result = calculateRentIncrease(current, marketRent);
   return [
-    `📊 RERA Rent Increase — ${tenant.name}`,
-    `🏠 Unit ${contract.unit} | ${area}`,
+    `📊 RERA Rent Increase — ${tenant.full_name}`,
+    `🏠 Unit ${tenant.unit_number} | ${area}`,
     `💰 Current rent: AED ${current.toLocaleString()}/year`,
     `💰 Market rent: AED ${marketRent.toLocaleString()}/year`,
     ``,
@@ -304,12 +250,12 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'send_email_to_tenant',
-    description: 'Send a custom professional bilingual email to a tenant. Use this when the landlord asks to email a tenant about any topic (e.g. "send Ahmed an email about contract renewal", "ابعث ايميل لأحمد"). You must write the full email subject and HTML body — make it professional and bilingual (English first, then Arabic after a <hr> divider).',
+    description: 'Send a custom professional bilingual email to a tenant. Use this when the landlord asks to email a tenant about any topic. Write the full email subject and HTML body — professional and bilingual (English first, then Arabic after a <hr> divider).',
     input_schema: {
       type: 'object' as const,
       properties: {
         tenantName: { type: 'string', description: 'Tenant full or partial name' },
-        subject: { type: 'string', description: 'Email subject line (bilingual if appropriate, e.g. "Contract Renewal | تجديد العقد")' },
+        subject: { type: 'string', description: 'Email subject line (bilingual if appropriate)' },
         bodyHtml: { type: 'string', description: 'Full HTML email body — professional styling, English section first, then Arabic section after a <hr/> divider' },
       },
       required: ['tenantName', 'subject', 'bodyHtml'],
@@ -340,7 +286,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'send_email',
-    description: 'Send an email directly to any email address. Use this when the landlord provides a specific email address or when the tenant email is already known. Prefer send_email_to_tenant when only a tenant name is given.',
+    description: 'Send an email directly to any email address. Prefer send_email_to_tenant when only a tenant name is given.',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -369,7 +315,6 @@ router.post('/incoming', async (req: Request, res: Response) => {
     return;
   }
 
-  // ── Excel file upload ──────────────────────────────────────────────────────
   console.log(`[WHATSAPP INCOMING] From: ${from} | MediaUrl0: ${mediaUrl ?? 'none'} | MediaContentType0: ${mediaType || 'none'}`);
 
   const isExcel =
@@ -380,13 +325,14 @@ router.post('/incoming', async (req: Request, res: Response) => {
     (!!mediaUrl && /\.xlsx?(\?|$)/i.test(mediaUrl)) ||
     mediaType === 'application/octet-stream';
 
+  // ── Excel file upload ──────────────────────────────────────────────────────
   if (mediaUrl && isExcel) {
     try {
       console.log(`[EXCEL IMPORT] Downloading from ${mediaUrl}`);
       const buffer = await downloadTwilioMedia(mediaUrl);
-      const result = importExcelBuffer(buffer);
+      const result = await importExcelBuffer(buffer);
 
-      const totalImported = result.landlords + result.properties + result.tenants + result.cheques;
+      const totalImported = result.buildings + result.units + result.tenants + result.cheques;
       if (totalImported === 0) {
         const errText = result.errors.length > 0 ? result.errors.join('\n') : 'No data found in the file.';
         res.send(twiml(`Could not import data:\n${errText}`));
@@ -394,8 +340,8 @@ router.post('/incoming', async (req: Request, res: Response) => {
       }
 
       const lines: string[] = ['✅ Data imported successfully!'];
-      if (result.landlords > 0) lines.push(`👤 ${result.landlords} landlord${result.landlords !== 1 ? 's' : ''} added`);
-      if (result.properties > 0) lines.push(`🏠 ${result.properties} propert${result.properties !== 1 ? 'ies' : 'y'} added`);
+      if (result.buildings > 0) lines.push(`🏢 ${result.buildings} building${result.buildings !== 1 ? 's' : ''} added`);
+      if (result.units > 0) lines.push(`🏠 ${result.units} unit${result.units !== 1 ? 's' : ''} added`);
       if (result.tenants > 0) lines.push(`👤 ${result.tenants} tenant${result.tenants !== 1 ? 's' : ''} added`);
       if (result.cheques > 0) lines.push(`🧾 ${result.cheques} cheque${result.cheques !== 1 ? 's' : ''} added`);
       if (result.errors.length > 0) lines.push('', '⚠️ Warnings:', ...result.errors);
@@ -415,10 +361,11 @@ router.post('/incoming', async (req: Request, res: Response) => {
   if (userMessage.toLowerCase() === 'import data' || userMessage === 'استيراد البيانات') {
     res.send(twiml(
       'Please send your Excel file (.xlsx) with these sheets:\n' +
-      '• Landlords\n' +
-      '• Properties\n' +
-      '• Tenants\n' +
-      '• Cheques\n\n' +
+      '• 🏢 Buildings\n' +
+      '• 🏠 Units\n' +
+      '• 👤 Tenants\n' +
+      '• 🧾 Cheques\n' +
+      '• ⚙️ Your Details\n\n' +
       'I will import the data automatically.'
     ));
     return;
@@ -430,65 +377,53 @@ router.post('/incoming', async (req: Request, res: Response) => {
   }
 
   try {
-    cleanExpiredConversations();
-    const history = loadHistory(from);
+    await cleanExpiredConversations();
+    const history = await loadHistory(from);
     const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
     const today = new Date().toISOString().split('T')[0];
-    const data = allData();
-    const config = getConfig();
+    const data = await allData();
 
-    const annotatedContracts = data.contracts.map(c => ({
-      ...c,
-      daysUntilExpiry: daysUntil(c.endDate),
-      formattedEndDate: formatDate(c.endDate),
+    const annotatedTenants = data.tenants.map(t => ({
+      ...t,
+      daysUntilExpiry: daysUntil(t.contract_end),
+      formattedEndDate: formatDate(t.contract_end),
     }));
+
     const annotatedCheques = data.cheques
-      .map(c => {
-        // Support both original format (chequeDate/unit) and Excel-imported format (dueDate/property)
-        const raw = c as unknown as Record<string, unknown>;
-        const dateField = (raw['dueDate'] as string) || c.chequeDate || '';
-        return {
-          id: c.id,
-          tenantName: c.tenantName,
-          location: c.unit || (raw['property'] as string) || '',
-          amount: c.amount,
-          dueDate: dateField,
-          status: c.status || 'pending',
-          daysUntilDue: dateField ? daysUntil(dateField) : null,
-        };
-      })
-      .sort((a, b) => {
-        const da = a.daysUntilDue ?? Infinity;
-        const db = b.daysUntilDue ?? Infinity;
-        return da - db;
-      });
-    const annotatedCharges = data.serviceCharges.map(c => ({
-      ...c,
-      daysUntilDue: daysUntil(c.nextDueDate),
+      .map(c => ({
+        id: c.id,
+        tenant_name: c.tenant_name,
+        location: `${c.building_name} - ${c.unit_number}`,
+        amount: c.amount,
+        due_date: c.due_date,
+        bank_name: c.bank_name,
+        cheque_number: c.cheque_number,
+        status: c.status,
+        daysUntilDue: daysUntil(c.due_date),
+      }))
+      .sort((a, b) => a.daysUntilDue - b.daysUntilDue);
+
+    const annotatedUnits = data.units.map(u => ({
+      ...u,
+      hasServiceCharge: u.service_charge > 0,
     }));
 
     const systemPrompt = `You are a smart property management assistant for a Dubai landlord. Today is ${today}.
-Reminder threshold: ${config.renewalReminderDays} days before contract end.
+Reminder threshold: ${renewalReminderDays} days before contract end.
 
 DATA ACCESS:
 
-LANDLORDS:
-${JSON.stringify(data.landlords, null, 2)}
+BUILDINGS:
+${JSON.stringify(data.buildings, null, 2)}
 
-PROPERTIES:
-${JSON.stringify(data.properties, null, 2)}
+UNITS (annual_rent = yearly rent, service_charge = annual service charge):
+${JSON.stringify(annotatedUnits, null, 2)}
 
-TENANTS:
-${JSON.stringify(data.tenants, null, 2)}
+TENANTS (contract info embedded — contract_start, contract_end, daysUntilExpiry):
+${JSON.stringify(annotatedTenants, null, 2)}
 
 CHEQUES (sorted by daysUntilDue ascending — soonest first; negative = overdue; "next cheque" = first pending entry with daysUntilDue >= 0):
 ${JSON.stringify(annotatedCheques, null, 2)}
-
-CONTRACTS (daysUntilExpiry from today):
-${JSON.stringify(annotatedContracts, null, 2)}
-
-SERVICE CHARGES (daysUntilDue: negative = overdue):
-${JSON.stringify(annotatedCharges, null, 2)}
 
 STRICT FORMATTING RULES:
 - NEVER use asterisks (*), markdown bold, bullet points (-), or dashes for lists.
@@ -496,16 +431,17 @@ STRICT FORMATTING RULES:
 - No intro sentences ("Here are your contracts:", "Sure! Here is..."). Go straight to the data.
 - No closing sentences ("Let me know if...", "Feel free to ask...").
 
-When showing contracts use this exact block format (blank line between each):
+When showing contracts/tenants use this exact block format (blank line between each):
 
 🏠 Unit [X] - [Building]
-📅 Ends: [DD Mon YYYY] ([N] days)
+👤 [Tenant Name]
+📅 Contract ends: [DD Mon YYYY] ([N] days)
 💰 Rent: AED [amount]/year
 [status emoji + label]
 
 Status rules:
   daysUntilExpiry < 30  → 🚨 Renew URGENT
-  daysUntilExpiry < ${config.renewalReminderDays} → ⚠️ Renew soon
+  daysUntilExpiry < ${renewalReminderDays} → ⚠️ Renew soon
   otherwise             → ✅ All good
 
 When showing cheques use:
@@ -519,7 +455,6 @@ RERA: For rent increase questions cite Dubai Decree 43/2013. Use the check_rera_
 ACTIONS: Use the provided tools for any send/remind/update commands.
 EMAIL: When the landlord asks to send an email to a tenant (in any language), use send_email_to_tenant. Write a professional bilingual email (English + Arabic) as the bodyHtml parameter. Never send WhatsApp to tenants.`;
 
-    // First call — Claude may request tool use
     const firstResponse = await client.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 1024,
@@ -528,17 +463,15 @@ EMAIL: When the landlord asks to send an email to a tenant (in any language), us
       messages: [...history, { role: 'user', content: userMessage }],
     });
 
-    // If no tool call, return the text directly
     if (firstResponse.stop_reason !== 'tool_use') {
       const textBlock = firstResponse.content.find(b => b.type === 'text');
       const answer = textBlock?.type === 'text' ? textBlock.text : 'Sorry, I could not generate a response.';
-      saveHistory(from, userMessage, answer);
+      await saveHistory(from, userMessage, answer);
       console.log(`[WHATSAPP BOT] From: ${from} | Q: ${userMessage.slice(0, 60)} | A: ${answer.slice(0, 60)}`);
       res.send(twiml(answer));
       return;
     }
 
-    // Execute tool calls
     const toolResults: Anthropic.ToolResultBlockParam[] = [];
 
     for (const block of firstResponse.content) {
@@ -548,36 +481,22 @@ EMAIL: When the landlord asks to send an email to a tenant (in any language), us
 
       switch (block.name) {
         case 'send_renewal_notice':
-          result = await toolSendRenewalNotice(
-            input.tenantName as string,
-            input.increasePercent as number,
-          );
+          result = await toolSendRenewalNotice(input.tenantName as string, input.increasePercent as number);
           break;
         case 'send_reminder_to_tenant':
           result = await toolSendReminderToTenant(input.tenantName as string);
           break;
         case 'send_email_to_tenant':
-          result = await toolSendEmailToTenant(
-            input.tenantName as string,
-            input.subject as string,
-            input.bodyHtml as string,
-          );
+          result = await toolSendEmailToTenant(input.tenantName as string, input.subject as string, input.bodyHtml as string);
           break;
         case 'update_reminder_threshold':
           result = toolUpdateReminderThreshold(input.days as number);
           break;
         case 'check_rera_increase':
-          result = toolCheckRERA(
-            input.tenantName as string,
-            input.marketRent as number | undefined,
-          );
+          result = await toolCheckRERA(input.tenantName as string, input.marketRent as number | undefined);
           break;
         case 'send_email':
-          result = await toolSendEmail(
-            input.to as string,
-            input.subject as string,
-            input.body as string,
-          );
+          result = await toolSendEmail(input.to as string, input.subject as string, input.body as string);
           break;
         default:
           result = `Unknown tool: ${block.name}`;
@@ -587,7 +506,6 @@ EMAIL: When the landlord asks to send an email to a tenant (in any language), us
       toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: result });
     }
 
-    // Second call with tool results for final reply
     const secondResponse = await client.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 512,
@@ -606,7 +524,7 @@ EMAIL: When the landlord asks to send an email to a tenant (in any language), us
       ? textBlock.text
       : toolResults.map(r => r.content).join('\n');
 
-    saveHistory(from, userMessage, answer);
+    await saveHistory(from, userMessage, answer);
     console.log(`[WHATSAPP BOT] From: ${from} | Q: ${userMessage.slice(0, 60)} | A: ${answer.slice(0, 60)}`);
     res.send(twiml(answer));
   } catch (err: unknown) {

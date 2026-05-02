@@ -1,67 +1,62 @@
-import fs from 'fs';
-import path from 'path';
+import { supabase } from '../supabase';
+import { randomUUID } from 'crypto';
 
-const DATA_DIR = path.resolve(process.cwd(), process.env.DATA_DIR || './data');
-const CONVERSATIONS_PATH = path.join(DATA_DIR, 'conversations.json');
 const MAX_MESSAGES = 15;
 const EXPIRY_MS = 24 * 60 * 60 * 1000;
 
-interface ConversationEntry {
-  lastActivity: number;
-  messages: Array<{ role: 'user' | 'assistant'; content: string }>;
+type Message = { role: 'user' | 'assistant'; content: string };
+
+export async function loadHistory(phone: string): Promise<Message[]> {
+  const { data } = await supabase
+    .from('conversations')
+    .select('messages, updated_at')
+    .eq('phone', phone)
+    .maybeSingle();
+
+  if (!data) return [];
+
+  const updatedAt = new Date(data.updated_at as string).getTime();
+  if (Date.now() - updatedAt > EXPIRY_MS) return [];
+
+  return (data.messages as Message[]) ?? [];
 }
 
-type ConversationStore = Record<string, ConversationEntry>;
+export async function saveHistory(phone: string, userMessage: string, assistantMessage: string): Promise<void> {
+  const { data: existing } = await supabase
+    .from('conversations')
+    .select('id, messages, updated_at')
+    .eq('phone', phone)
+    .maybeSingle();
 
-function loadStore(): ConversationStore {
-  if (!fs.existsSync(CONVERSATIONS_PATH)) return {};
-  try {
-    return JSON.parse(fs.readFileSync(CONVERSATIONS_PATH, 'utf-8')) as ConversationStore;
-  } catch {
-    return {};
-  }
-}
-
-function saveStore(store: ConversationStore): void {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-  fs.writeFileSync(CONVERSATIONS_PATH, JSON.stringify(store, null, 2), 'utf-8');
-}
-
-export function loadHistory(phone: string): Array<{ role: 'user' | 'assistant'; content: string }> {
-  const store = loadStore();
-  const entry = store[phone];
-  if (!entry || Date.now() - entry.lastActivity > EXPIRY_MS) return [];
-  return entry.messages;
-}
-
-export function saveHistory(phone: string, userMessage: string, assistantMessage: string): void {
-  const store = loadStore();
-  const existing = store[phone];
   const now = Date.now();
+  let prior: Message[] = [];
 
-  const prior: Array<{ role: 'user' | 'assistant'; content: string }> =
-    existing && now - existing.lastActivity <= EXPIRY_MS ? [...existing.messages] : [];
+  if (existing) {
+    const updatedAt = new Date(existing.updated_at as string).getTime();
+    if (now - updatedAt <= EXPIRY_MS) {
+      prior = (existing.messages as Message[]) ?? [];
+    }
+  }
 
   prior.push({ role: 'user', content: userMessage });
   prior.push({ role: 'assistant', content: assistantMessage });
 
-  // Keep last MAX_MESSAGES, always starting with a user turn
   let trimmed = prior.slice(-MAX_MESSAGES);
   while (trimmed.length > 0 && trimmed[0].role === 'assistant') trimmed = trimmed.slice(1);
 
-  store[phone] = { lastActivity: now, messages: trimmed };
-  saveStore(store);
+  const nowIso = new Date(now).toISOString();
+
+  if (existing) {
+    await supabase.from('conversations')
+      .update({ messages: trimmed, updated_at: nowIso })
+      .eq('phone', phone);
+  } else {
+    await supabase.from('conversations')
+      .insert({ id: randomUUID(), phone, messages: trimmed, updated_at: nowIso });
+  }
 }
 
-export function cleanExpiredConversations(): void {
-  const store = loadStore();
-  const now = Date.now();
-  let changed = false;
-  for (const key of Object.keys(store)) {
-    if (now - store[key].lastActivity > EXPIRY_MS) {
-      delete store[key];
-      changed = true;
-    }
-  }
-  if (changed) saveStore(store);
+export async function cleanExpiredConversations(): Promise<void> {
+  const cutoff = new Date(Date.now() - EXPIRY_MS).toISOString();
+  await supabase.from('conversations').delete().lt('updated_at', cutoff);
 }

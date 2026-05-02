@@ -1,73 +1,84 @@
 import { Router, Request, Response } from 'express';
-import { getCheques, getContracts, getServiceCharges, daysUntil } from '../utils/data';
+import { supabase } from '../supabase';
+import { daysUntil } from '../utils/data';
 import { sendAlert } from '../services/whatsapp';
 
 const router = Router();
 
-// POST /api/notify/cheques
-// Sends urgent alert for cheques due today, reminder for due in 1-7 days.
+// POST /api/notify/cheques — alert for cheques due today or in next 7 days
 router.post('/cheques', async (_req: Request, res: Response) => {
-  const cheques = getCheques();
+  const today = new Date().toISOString().split('T')[0];
+  const future7 = new Date(Date.now() + 7 * 86_400_000).toISOString().split('T')[0];
+
+  const { data: cheques } = await supabase
+    .from('cheques')
+    .select('*')
+    .eq('status', 'pending')
+    .gte('due_date', today)
+    .lte('due_date', future7)
+    .order('due_date', { ascending: true });
+
   const sent: string[] = [];
 
-  for (const cheque of cheques) {
-    if (cheque.status !== 'pending') continue;
-    const raw = cheque as unknown as Record<string, unknown>;
-    const dateField = cheque.chequeDate || (raw['dueDate'] as string) || '';
-    if (!dateField) continue;
-    const days = daysUntil(dateField);
-    const location = cheque.unit || (raw['property'] as string) || '';
+  for (const cheque of cheques ?? []) {
+    const days = daysUntil(cheque.due_date);
+    const location = `${cheque.building_name} - ${cheque.unit_number}`;
 
     if (days === 0) {
-      await sendAlert(
-        `🚨 Deposit today: ${cheque.tenantName} - ${location} - AED ${cheque.amount.toLocaleString()}. Cheque due today!`
-      );
-      sent.push(`TODAY: ${cheque.tenantName} ${location}`);
+      await sendAlert(`🚨 Deposit today: ${cheque.tenant_name} - ${location} - AED ${cheque.amount.toLocaleString()}`);
+      sent.push(`TODAY: ${cheque.tenant_name} ${location}`);
     } else if (days >= 1 && days <= 7) {
       await sendAlert(
-        `⏰ Cheque due in ${days} day${days === 1 ? '' : 's'}\nTenant: ${cheque.tenantName} | Property: ${location}\nAmount: AED ${cheque.amount.toLocaleString()} | Due: ${dateField}`
+        `⏰ Cheque due in ${days} day${days === 1 ? '' : 's'}\nTenant: ${cheque.tenant_name} | Unit: ${location}\nAmount: AED ${cheque.amount.toLocaleString()} | Due: ${cheque.due_date}`
       );
-      sent.push(`${days}d: ${cheque.tenantName} ${location}`);
+      sent.push(`${days}d: ${cheque.tenant_name} ${location}`);
     }
   }
 
   res.json({ sent: sent.length, details: sent });
 });
 
-// POST /api/notify/contracts
-// Sends WhatsApp alert for each active contract expiring within 120 days.
+// POST /api/notify/contracts — alert for contracts expiring within 120 days
 router.post('/contracts', async (_req: Request, res: Response) => {
-  const contracts = getContracts();
+  const today = new Date().toISOString().split('T')[0];
+  const future120 = new Date(Date.now() + 120 * 86_400_000).toISOString().split('T')[0];
+
+  const { data: tenants } = await supabase
+    .from('tenants')
+    .select('*')
+    .eq('status', 'active')
+    .gte('contract_end', today)
+    .lte('contract_end', future120)
+    .order('contract_end', { ascending: true });
+
   const sent: string[] = [];
 
-  for (const contract of contracts) {
-    if (contract.status !== 'active') continue;
-    const days = daysUntil(contract.endDate);
-    if (days < 0 || days > 120) continue;
-
+  for (const tenant of tenants ?? []) {
+    const days = daysUntil(tenant.contract_end);
     await sendAlert(
-      `📋 Contract expiring in ${days} day${days === 1 ? '' : 's'}\nTenant: ${contract.tenantName} | Unit: ${contract.unit}\nExpiry: ${contract.endDate}`
+      `📋 Contract expiring in ${days} day${days === 1 ? '' : 's'}\nTenant: ${tenant.full_name} | Unit: ${tenant.building_name} - ${tenant.unit_number}\nExpiry: ${tenant.contract_end}`
     );
-    sent.push(`${days}d: ${contract.tenantName} ${contract.unit}`);
+    sent.push(`${days}d: ${tenant.full_name} ${tenant.unit_number}`);
   }
 
   res.json({ sent: sent.length, details: sent });
 });
 
-// POST /api/notify/service-charges
-// Sends WhatsApp alert for each service charge that is due (daysUntil <= 0).
+// POST /api/notify/service-charges — alert for all units with service charges
 router.post('/service-charges', async (_req: Request, res: Response) => {
-  const charges = getServiceCharges();
+  const { data: units } = await supabase
+    .from('units')
+    .select('*')
+    .gt('service_charge', 0)
+    .order('building_name', { ascending: true });
+
   const sent: string[] = [];
 
-  for (const charge of charges) {
-    const days = daysUntil(charge.nextDueDate);
-    if (days > 0) continue;
-
+  for (const unit of units ?? []) {
     await sendAlert(
-      `🏢 Service charge due\nProperty: ${charge.propertyName} | Unit: ${charge.unit}\nAmount: AED ${charge.amount.toLocaleString()} | Due: ${charge.nextDueDate}`
+      `🏢 Service charge due\nBuilding: ${unit.building_name} | Unit: ${unit.unit_number}\nAnnual Amount: AED ${unit.service_charge.toLocaleString()}`
     );
-    sent.push(`${charge.propertyName} ${charge.unit}`);
+    sent.push(`${unit.building_name} ${unit.unit_number}`);
   }
 
   res.json({ sent: sent.length, details: sent });

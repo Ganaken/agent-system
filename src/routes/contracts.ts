@@ -1,53 +1,64 @@
 import { Router, Request, Response } from 'express';
 import { randomUUID } from 'crypto';
-import { getContracts, saveContracts, daysUntil } from '../utils/data';
-import type { Contract } from '../types';
+import { supabase } from '../supabase';
+import { daysUntil } from '../utils/data';
 
 const router = Router();
 
-router.get('/', (_req: Request, res: Response) => {
-  res.json(getContracts());
+// Contracts are stored as fields on tenants (contract_start, contract_end, etc.)
+
+router.get('/', async (_req: Request, res: Response) => {
+  const { data, error } = await supabase.from('tenants').select('*').order('contract_end', { ascending: true });
+  if (error) { res.status(500).json({ error: error.message }); return; }
+  res.json(data ?? []);
 });
 
-// GET /api/contracts/expiring — contracts expiring in next 120 days
-router.get('/expiring', (_req: Request, res: Response) => {
-  const contracts = getContracts();
-  const expiring = contracts
-    .filter(c => c.status === 'active' && daysUntil(c.endDate) >= 0 && daysUntil(c.endDate) <= 120)
-    .map(c => ({ ...c, daysUntil: daysUntil(c.endDate) }))
-    .sort((a, b) => a.daysUntil - b.daysUntil);
-  res.json(expiring);
+// GET /api/contracts/expiring — tenants whose contract ends within 120 days
+router.get('/expiring', async (_req: Request, res: Response) => {
+  const today = new Date().toISOString().split('T')[0];
+  const future = new Date(Date.now() + 120 * 86_400_000).toISOString().split('T')[0];
+
+  const { data, error } = await supabase
+    .from('tenants')
+    .select('*')
+    .eq('status', 'active')
+    .gte('contract_end', today)
+    .lte('contract_end', future)
+    .order('contract_end', { ascending: true });
+
+  if (error) { res.status(500).json({ error: error.message }); return; }
+  res.json((data ?? []).map(t => ({ ...t, daysUntil: daysUntil(t.contract_end) })));
 });
 
-router.post('/', (req: Request, res: Response) => {
-  const contracts = getContracts();
-  const contract: Contract = {
-    id: randomUUID(),
-    status: 'active',
-    renewalEmailSent: false,
-    ...req.body,
-  };
-  contracts.push(contract);
-  saveContracts(contracts);
-  res.status(201).json(contract);
+router.post('/', async (req: Request, res: Response) => {
+  const tenant = { id: randomUUID(), status: 'active', ...req.body };
+  const { data, error } = await supabase.from('tenants').insert(tenant).select().single();
+  if (error) { res.status(500).json({ error: error.message }); return; }
+  res.status(201).json(data);
 });
 
-router.patch('/:id', (req: Request, res: Response) => {
-  const contracts = getContracts();
-  const contract = contracts.find(c => c.id === req.params['id']);
-  if (!contract) { res.status(404).json({ error: 'Not found' }); return; }
-  Object.assign(contract, req.body);
-  saveContracts(contracts);
-  res.json(contract);
+router.patch('/:id', async (req: Request, res: Response) => {
+  const { data, error } = await supabase
+    .from('tenants')
+    .update(req.body)
+    .eq('id', req.params['id'])
+    .select()
+    .single();
+  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (!data) { res.status(404).json({ error: 'Not found' }); return; }
+  res.json(data);
 });
 
-router.delete('/:id', (req: Request, res: Response) => {
-  const contracts = getContracts();
-  const idx = contracts.findIndex(c => c.id === req.params['id']);
-  if (idx === -1) { res.status(404).json({ error: 'Not found' }); return; }
-  const [removed] = contracts.splice(idx, 1);
-  saveContracts(contracts);
-  res.json(removed);
+router.delete('/:id', async (req: Request, res: Response) => {
+  const { data, error } = await supabase
+    .from('tenants')
+    .delete()
+    .eq('id', req.params['id'])
+    .select()
+    .single();
+  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (!data) { res.status(404).json({ error: 'Not found' }); return; }
+  res.json(data);
 });
 
 export default router;

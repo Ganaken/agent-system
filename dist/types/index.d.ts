@@ -1,62 +1,48 @@
+export interface Building {
+    id: string;
+    name: string;
+    location: string;
+    total_units: number;
+    type: string;
+    developer: string;
+    notes: string;
+}
+export interface Unit {
+    id: string;
+    building_name: string;
+    unit_number: string;
+    type: string;
+    area_sqm: number;
+    floor: number;
+    annual_rent: number;
+    service_charge: number;
+    notes: string;
+}
 export interface Tenant {
     id: string;
-    name: string;
+    full_name: string;
+    building_name: string;
+    unit_number: string;
     email: string;
     phone: string;
-    unitId: string;
-    nationality?: string;
-}
-export interface Property {
-    id: string;
-    name: string;
-    unit: string;
-    building: string;
-    area: string;
-    address: string;
-    propertyType: 'apartment' | 'villa' | 'office';
+    nationality: string;
+    contract_start: string;
+    contract_end: string;
+    number_of_cheques: number;
+    notes: string;
+    status: string;
 }
 export interface Cheque {
     id: string;
-    tenantId: string;
-    tenantName: string;
-    unit: string;
-    propertyId: string;
+    tenant_name: string;
+    building_name: string;
+    unit_number: string;
     amount: number;
-    chequeDate: string;
+    due_date: string;
+    bank_name: string;
+    cheque_number: string;
     status: 'pending' | 'deposited' | 'bounced';
-    reminderSent30?: boolean;
-    reminderSent14?: boolean;
-    reminderSent7?: boolean;
-}
-export interface Contract {
-    id: string;
-    tenantId: string;
-    tenantName: string;
-    tenantEmail: string;
-    unit: string;
-    propertyId: string;
-    startDate: string;
-    endDate: string;
-    rentAmount: number;
-    status: 'active' | 'expired' | 'terminated';
-    renewalEmailSent?: boolean;
-}
-export interface ServiceCharge {
-    id: string;
-    propertyId: string;
-    propertyName: string;
-    unit: string;
-    amount: number;
-    lastPaymentDate: string;
-    nextDueDate: string;
-    frequency: 'quarterly' | 'annual';
-}
-export interface Landlord {
-    id: string;
-    name: string;
-    relationship: string;
-    email: string;
-    whatsapp: string;
-    emiratesId: string;
+    reminder_sent_7: boolean;
+    reminder_sent_1: boolean;
 }
 //# sourceMappingURL=index.d.ts.map

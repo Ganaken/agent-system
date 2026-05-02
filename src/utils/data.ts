@@ -1,52 +1,13 @@
-import fs from 'fs';
-import path from 'path';
-import type { Tenant, Property, Cheque, Contract, ServiceCharge, Landlord } from '../types';
-
-const DATA_DIR = path.resolve(process.cwd(), process.env.DATA_DIR || './data');
-
-export function ensureDataDir(): void {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-}
-
-function filePath(name: string): string {
-  return path.join(DATA_DIR, name);
-}
-
-export function readJSON<T>(name: string): T[] {
-  const p = filePath(name);
-  if (!fs.existsSync(p)) {
-    fs.writeFileSync(p, '[]', 'utf-8');
-    return [];
-  }
-  return JSON.parse(fs.readFileSync(p, 'utf-8')) as T[];
-}
-
-export function writeJSON<T>(name: string, data: T[]): void {
-  fs.writeFileSync(filePath(name), JSON.stringify(data, null, 2), 'utf-8');
-}
-
-export const getTenants = () => readJSON<Tenant>('tenants.json');
-export const saveTenants = (d: Tenant[]) => writeJSON('tenants.json', d);
-
-export const getProperties = () => readJSON<Property>('properties.json');
-export const saveProperties = (d: Property[]) => writeJSON('properties.json', d);
-
-export const getCheques = () => readJSON<Cheque>('cheques.json');
-export const saveCheques = (d: Cheque[]) => writeJSON('cheques.json', d);
-
-export const getContracts = () => readJSON<Contract>('contracts.json');
-export const saveContracts = (d: Contract[]) => writeJSON('contracts.json', d);
-
-export const getServiceCharges = () => readJSON<ServiceCharge>('service-charges.json');
-export const saveServiceCharges = (d: ServiceCharge[]) => writeJSON('service-charges.json', d);
-
-export const getLandlords = () => readJSON<Landlord>('landlords.json');
-export const saveLandlords = (d: Landlord[]) => writeJSON('landlords.json', d);
+import { supabase } from '../supabase';
+import type { Building, Unit, Tenant, Cheque } from '../types';
 
 export function daysUntil(dateStr: string): number {
+  if (!dateStr) return Infinity;
   const now = new Date();
   const todayUTC = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
-  const [y, m, d] = dateStr.split('-').map(Number);
+  const parts = dateStr.split('-').map(Number);
+  if (parts.length !== 3 || parts.some(isNaN)) return Infinity;
+  const [y, m, d] = parts;
   const targetUTC = Date.UTC(y, m - 1, d);
   return Math.round((targetUTC - todayUTC) / 86_400_000);
 }
@@ -57,13 +18,36 @@ export function addMonths(dateStr: string, months: number): string {
   return d.toISOString().split('T')[0];
 }
 
-export function allData() {
-  return {
-    landlords: getLandlords(),
-    tenants: getTenants(),
-    properties: getProperties(),
-    cheques: getCheques(),
-    contracts: getContracts(),
-    serviceCharges: getServiceCharges(),
-  };
+export async function getBuildings(): Promise<Building[]> {
+  const { data, error } = await supabase.from('buildings').select('*');
+  if (error) { console.error('[DB] buildings:', error.message); return []; }
+  return data ?? [];
+}
+
+export async function getUnits(): Promise<Unit[]> {
+  const { data, error } = await supabase.from('units').select('*');
+  if (error) { console.error('[DB] units:', error.message); return []; }
+  return data ?? [];
+}
+
+export async function getTenants(): Promise<Tenant[]> {
+  const { data, error } = await supabase.from('tenants').select('*');
+  if (error) { console.error('[DB] tenants:', error.message); return []; }
+  return data ?? [];
+}
+
+export async function getCheques(): Promise<Cheque[]> {
+  const { data, error } = await supabase.from('cheques').select('*');
+  if (error) { console.error('[DB] cheques:', error.message); return []; }
+  return data ?? [];
+}
+
+export async function allData() {
+  const [buildings, units, tenants, cheques] = await Promise.all([
+    getBuildings(),
+    getUnits(),
+    getTenants(),
+    getCheques(),
+  ]);
+  return { buildings, units, tenants, cheques };
 }

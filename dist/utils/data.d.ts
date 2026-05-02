@@ -1,27 +1,14 @@
-import type { Tenant, Property, Cheque, Contract, ServiceCharge, Landlord } from '../types';
-export declare function ensureDataDir(): void;
-export declare function readJSON<T>(name: string): T[];
-export declare function writeJSON<T>(name: string, data: T[]): void;
-export declare const getTenants: () => Tenant[];
-export declare const saveTenants: (d: Tenant[]) => void;
-export declare const getProperties: () => Property[];
-export declare const saveProperties: (d: Property[]) => void;
-export declare const getCheques: () => Cheque[];
-export declare const saveCheques: (d: Cheque[]) => void;
-export declare const getContracts: () => Contract[];
-export declare const saveContracts: (d: Contract[]) => void;
-export declare const getServiceCharges: () => ServiceCharge[];
-export declare const saveServiceCharges: (d: ServiceCharge[]) => void;
-export declare const getLandlords: () => Landlord[];
-export declare const saveLandlords: (d: Landlord[]) => void;
+import type { Building, Unit, Tenant, Cheque } from '../types';
 export declare function daysUntil(dateStr: string): number;
 export declare function addMonths(dateStr: string, months: number): string;
-export declare function allData(): {
-    landlords: Landlord[];
+export declare function getBuildings(): Promise<Building[]>;
+export declare function getUnits(): Promise<Unit[]>;
+export declare function getTenants(): Promise<Tenant[]>;
+export declare function getCheques(): Promise<Cheque[]>;
+export declare function allData(): Promise<{
+    buildings: Building[];
+    units: Unit[];
     tenants: Tenant[];
-    properties: Property[];
     cheques: Cheque[];
-    contracts: Contract[];
-    serviceCharges: ServiceCharge[];
-};
+}>;
 //# sourceMappingURL=data.d.ts.map

@@ -1,29 +1,32 @@
 import { Router, Request, Response } from 'express';
 import { randomUUID } from 'crypto';
-import { getTenants, saveTenants } from '../utils/data';
-import type { Tenant } from '../types';
+import { supabase } from '../supabase';
 
 const router = Router();
 
-router.get('/', (_req: Request, res: Response) => {
-  res.json(getTenants());
+router.get('/', async (_req: Request, res: Response) => {
+  const { data, error } = await supabase.from('tenants').select('*').order('full_name', { ascending: true });
+  if (error) { res.status(500).json({ error: error.message }); return; }
+  res.json(data ?? []);
 });
 
-router.post('/', (req: Request, res: Response) => {
-  const tenants = getTenants();
-  const tenant: Tenant = { id: randomUUID(), ...req.body };
-  tenants.push(tenant);
-  saveTenants(tenants);
-  res.status(201).json(tenant);
+router.post('/', async (req: Request, res: Response) => {
+  const tenant = { id: randomUUID(), status: 'active', ...req.body };
+  const { data, error } = await supabase.from('tenants').insert(tenant).select().single();
+  if (error) { res.status(500).json({ error: error.message }); return; }
+  res.status(201).json(data);
 });
 
-router.delete('/:id', (req: Request, res: Response) => {
-  const tenants = getTenants();
-  const idx = tenants.findIndex(t => t.id === req.params['id']);
-  if (idx === -1) { res.status(404).json({ error: 'Not found' }); return; }
-  const [removed] = tenants.splice(idx, 1);
-  saveTenants(tenants);
-  res.json(removed);
+router.delete('/:id', async (req: Request, res: Response) => {
+  const { data, error } = await supabase
+    .from('tenants')
+    .delete()
+    .eq('id', req.params['id'])
+    .select()
+    .single();
+  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (!data) { res.status(404).json({ error: 'Not found' }); return; }
+  res.json(data);
 });
 
 export default router;

@@ -1,52 +1,61 @@
 import { Router, Request, Response } from 'express';
 import { randomUUID } from 'crypto';
-import { getServiceCharges, saveServiceCharges, daysUntil } from '../utils/data';
-import type { ServiceCharge } from '../types';
+import { supabase } from '../supabase';
 
 const router = Router();
 
-router.get('/', (_req: Request, res: Response) => {
-  res.json(getServiceCharges());
+// Service charges are stored as service_charge field on units
+
+router.get('/', async (_req: Request, res: Response) => {
+  const { data, error } = await supabase
+    .from('units')
+    .select('*')
+    .gt('service_charge', 0)
+    .order('building_name', { ascending: true });
+  if (error) { res.status(500).json({ error: error.message }); return; }
+  res.json(data ?? []);
 });
 
-// GET /api/service-charges/due — service charges due within 30 days (or overdue)
-router.get('/due', (_req: Request, res: Response) => {
-  const charges = getServiceCharges();
-  const due = charges
-    .filter(c => daysUntil(c.nextDueDate) <= 30)
-    .map(c => ({ ...c, daysUntil: daysUntil(c.nextDueDate) }))
-    .sort((a, b) => a.daysUntil - b.daysUntil);
-  res.json(due);
+// GET /api/service-charges/due — all units with service charges
+router.get('/due', async (_req: Request, res: Response) => {
+  const { data, error } = await supabase
+    .from('units')
+    .select('*')
+    .gt('service_charge', 0)
+    .order('service_charge', { ascending: false });
+  if (error) { res.status(500).json({ error: error.message }); return; }
+  res.json(data ?? []);
 });
 
-router.post('/', (req: Request, res: Response) => {
-  const charges = getServiceCharges();
-  const charge: ServiceCharge = {
-    id: randomUUID(),
-    frequency: 'quarterly',
-    ...req.body,
-  };
-  charges.push(charge);
-  saveServiceCharges(charges);
-  res.status(201).json(charge);
+router.post('/', async (req: Request, res: Response) => {
+  const unit = { id: randomUUID(), ...req.body };
+  const { data, error } = await supabase.from('units').insert(unit).select().single();
+  if (error) { res.status(500).json({ error: error.message }); return; }
+  res.status(201).json(data);
 });
 
-router.patch('/:id', (req: Request, res: Response) => {
-  const charges = getServiceCharges();
-  const charge = charges.find(c => c.id === req.params['id']);
-  if (!charge) { res.status(404).json({ error: 'Not found' }); return; }
-  Object.assign(charge, req.body);
-  saveServiceCharges(charges);
-  res.json(charge);
+router.patch('/:id', async (req: Request, res: Response) => {
+  const { data, error } = await supabase
+    .from('units')
+    .update(req.body)
+    .eq('id', req.params['id'])
+    .select()
+    .single();
+  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (!data) { res.status(404).json({ error: 'Not found' }); return; }
+  res.json(data);
 });
 
-router.delete('/:id', (req: Request, res: Response) => {
-  const charges = getServiceCharges();
-  const idx = charges.findIndex(c => c.id === req.params['id']);
-  if (idx === -1) { res.status(404).json({ error: 'Not found' }); return; }
-  const [removed] = charges.splice(idx, 1);
-  saveServiceCharges(charges);
-  res.json(removed);
+router.delete('/:id', async (req: Request, res: Response) => {
+  const { data, error } = await supabase
+    .from('units')
+    .delete()
+    .eq('id', req.params['id'])
+    .select()
+    .single();
+  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (!data) { res.status(404).json({ error: 'Not found' }); return; }
+  res.json(data);
 });
 
 export default router;
