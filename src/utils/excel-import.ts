@@ -56,10 +56,12 @@ function toISODate(val: unknown): string {
   }
   if (typeof val === 'string' && val.trim()) {
     const s = val.trim();
-    const dmy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    // DD-MM-YYYY
+    const dmy = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
     if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
-    const dmy2 = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
-    if (dmy2) return `${dmy2[3]}-${dmy2[2].padStart(2, '0')}-${dmy2[1].padStart(2, '0')}`;
+    // DD/MM/YYYY
+    const dmySlash = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (dmySlash) return `${dmySlash[3]}-${dmySlash[2].padStart(2, '0')}-${dmySlash[1].padStart(2, '0')}`;
     const d = new Date(s);
     if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
   }
@@ -77,27 +79,39 @@ function dateField(row: Record<string, unknown>, ...fields: string[]): string {
   return '';
 }
 
-// Strip emojis and punctuation, lowercase — so "🏠 Units" and "Units" both → "units"
+// Strip emojis and punctuation, lowercase — "🏠 Units" and "Units" both → "units"
 function sheetKey(s: string): string {
   return s.replace(/[^\w\s]/gu, '').replace(/\s+/g, ' ').trim().toLowerCase();
 }
 
-function findSheet(wb: XLSX.WorkBook, target: string): string | undefined {
-  if (wb.SheetNames.includes(target)) return target;
-  const t = sheetKey(target);
-  return wb.SheetNames.find(s => sheetKey(s) === t);
+function findSheet(wb: XLSX.WorkBook, ...targets: string[]): string | undefined {
+  for (const target of targets) {
+    if (wb.SheetNames.includes(target)) return target;
+    const t = sheetKey(target);
+    const found = wb.SheetNames.find(s => sheetKey(s) === t);
+    if (found) return found;
+  }
+  return undefined;
 }
 
-// Row 1 = title (skip), Row 2 = headers (strip * markers), Row 3+ = data
+// v3 format:
+//   Row 1 — title/merged cell (skip)
+//   Row 2 — warning/note (skip)
+//   Row 3 — column headers (index 2)
+//   Row 4 — example row greyed out (always skip, index 3)
+//   Row 5+ — real data (index 4+)
+//
+// First column empty → skip that row
 function getRows(wb: XLSX.WorkBook, sheetName: string): Record<string, unknown>[] {
   const sheet = wb.Sheets[sheetName];
   if (!sheet) return [];
 
   const raw = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' }) as unknown[][];
-  if (raw.length < 3) return [];
+  if (raw.length < 5) return [];
 
-  const headers = (raw[1] as unknown[]).map(h => String(h ?? '').replace(/\*/g, '').trim());
-  const dataRows = raw.slice(2);
+  const headers = (raw[2] as unknown[]).map(h => String(h ?? '').replace(/\*/g, '').trim());
+  const firstHeader = headers[0];
+  const dataRows = raw.slice(4); // skip title, warning, headers, example
 
   return dataRows
     .map(row => {
@@ -107,13 +121,17 @@ function getRows(wb: XLSX.WorkBook, sheetName: string): Record<string, unknown>[
       });
       return record;
     })
-    .filter(r => Object.values(r).some(v => v !== '' && v !== null && v !== undefined));
+    .filter(r => {
+      // skip row if first column is empty
+      if (firstHeader && (r[firstHeader] === '' || r[firstHeader] === null || r[firstHeader] === undefined)) return false;
+      return true;
+    });
 }
 
 export async function importExcelBuffer(buffer: Buffer): Promise<ImportResult> {
   const errors: string[] = [];
 
-  // Delete all rows from data tables before import
+  // Clear all data tables before import
   await Promise.all([
     supabase.from('buildings').delete().not('id', 'is', null),
     supabase.from('units').delete().not('id', 'is', null),
@@ -126,14 +144,14 @@ export async function importExcelBuffer(buffer: Buffer): Promise<ImportResult> {
 
   // ── Buildings ─────────────────────────────────────────────────────────────
   let buildingCount = 0;
-  const buildingSheet = findSheet(wb, '🏢 Buildings');
+  const buildingSheet = findSheet(wb, 'Buildings', '🏢 Buildings');
   if (buildingSheet) {
     const rows = getRows(wb, buildingSheet);
     const data = rows
-      .filter(r => str(r, 'Name', 'Building Name'))
+      .filter(r => str(r, 'Building Name', 'Name'))
       .map(r => ({
         id: randomUUID(),
-        name: str(r, 'Name', 'Building Name'),
+        name: str(r, 'Building Name', 'Name'),
         location: str(r, 'Location'),
         total_units: Math.round(num(r, 'Total Units', 'Units')) || 1,
         type: str(r, 'Type') || 'Residential',
@@ -150,11 +168,11 @@ export async function importExcelBuffer(buffer: Buffer): Promise<ImportResult> {
 
   // ── Units ──────────────────────────────────────────────────────────────────
   let unitCount = 0;
-  const unitSheet = findSheet(wb, '🏠 Units');
+  const unitSheet = findSheet(wb, 'Units', '🏠 Units');
   if (unitSheet) {
     const rows = getRows(wb, unitSheet);
     const data = rows
-      .filter(r => str(r, 'Unit Number', 'Unit No') || str(r, 'Building Name'))
+      .filter(r => str(r, 'Building Name', 'Building') && str(r, 'Unit Number', 'Unit No'))
       .map(r => ({
         id: randomUUID(),
         building_name: str(r, 'Building Name', 'Building'),
@@ -162,9 +180,9 @@ export async function importExcelBuffer(buffer: Buffer): Promise<ImportResult> {
         type: str(r, 'Type'),
         area_sqm: num(r, 'Area (sqm)', 'Area sqm', 'Area'),
         floor: str(r, 'Floor'),
-        annual_rent: num(r, 'Annual Rent', 'Annual Rent (AED)', 'Rent'),
-        service_charge: num(r, 'Service Charge', 'Service Charge (AED)', 'SC'),
-        purchase_price: num(r, 'Purchase Price', 'Purchase Price (AED)') || null,
+        annual_rent: num(r, 'Annual Rent (AED)', 'Annual Rent', 'Rent'),
+        service_charge: num(r, 'Service Charge (AED/yr)', 'Service Charge (AED)', 'Service Charge', 'SC'),
+        purchase_price: num(r, 'Purchase Price (AED)', 'Purchase Price') || null,
         status: str(r, 'Status') || 'active',
         notes: str(r, 'Notes'),
       }));
@@ -175,12 +193,12 @@ export async function importExcelBuffer(buffer: Buffer): Promise<ImportResult> {
     }
     console.log(`[EXCEL IMPORT] Units: ${unitCount}`);
   } else {
-    errors.push(`Sheet "🏠 Units" not found. Sheets in file: ${wb.SheetNames.join(', ')}`);
+    errors.push(`Sheet "Units" not found. Sheets in file: ${wb.SheetNames.join(', ')}`);
   }
 
   // ── Tenants ────────────────────────────────────────────────────────────────
   let tenantCount = 0;
-  const tenantSheet = findSheet(wb, '👤 Tenants');
+  const tenantSheet = findSheet(wb, 'Tenants', '👤 Tenants');
   if (tenantSheet) {
     const rows = getRows(wb, tenantSheet);
     const data = rows
@@ -193,13 +211,13 @@ export async function importExcelBuffer(buffer: Buffer): Promise<ImportResult> {
         email: str(r, 'Email', 'Email Address'),
         phone: str(r, 'Phone', 'Phone Number', 'WhatsApp'),
         nationality: str(r, 'Nationality'),
-        id_number: str(r, 'ID Number', 'Emirates ID', 'Passport Number') || null,
-        id_expiry: dateField(r, 'ID Expiry', 'Emirates ID Expiry', 'Passport Expiry') || null,
+        id_number: str(r, 'Emirates ID', 'ID Number', 'Passport Number') || null,
+        id_expiry: dateField(r, 'ID Expiry (DD-MM-YYYY)', 'ID Expiry', 'Emirates ID Expiry', 'Passport Expiry') || null,
         rera_number: str(r, 'RERA Number', 'RERA No') || null,
         ejari_number: str(r, 'Ejari Number', 'Ejari No', 'EJARI') || null,
-        contract_start: dateField(r, 'Contract Start (DD/MM/YYYY)', 'Contract Start', 'Contract Start Date', 'Start Date'),
-        contract_end: dateField(r, 'Contract End (DD/MM/YYYY)', 'Contract End', 'Contract End Date', 'End Date'),
-        number_of_cheques: Math.round(num(r, 'Number of Cheques', 'Cheques', 'No of Cheques')),
+        contract_start: dateField(r, 'Contract Start (DD-MM-YYYY)', 'Contract Start', 'Contract Start Date', 'Start Date'),
+        contract_end: dateField(r, 'Contract End (DD-MM-YYYY)', 'Contract End', 'Contract End Date', 'End Date'),
+        number_of_cheques: Math.round(num(r, 'No. Cheques', 'Number of Cheques', 'No of Cheques', 'Cheques')),
         notes: str(r, 'Notes'),
         status: str(r, 'Status') || 'active',
       }));
@@ -210,12 +228,12 @@ export async function importExcelBuffer(buffer: Buffer): Promise<ImportResult> {
     }
     console.log(`[EXCEL IMPORT] Tenants: ${tenantCount}`);
   } else {
-    errors.push(`Sheet "👤 Tenants" not found. Sheets in file: ${wb.SheetNames.join(', ')}`);
+    errors.push(`Sheet "Tenants" not found. Sheets in file: ${wb.SheetNames.join(', ')}`);
   }
 
   // ── Cheques ────────────────────────────────────────────────────────────────
   let chequeCount = 0;
-  const chequeSheet = findSheet(wb, '🧾 Cheques');
+  const chequeSheet = findSheet(wb, 'Cheques', '🧾 Cheques');
   if (chequeSheet) {
     const rows = getRows(wb, chequeSheet);
     const data = rows
@@ -225,11 +243,11 @@ export async function importExcelBuffer(buffer: Buffer): Promise<ImportResult> {
         tenant_name: str(r, 'Tenant Full Name', 'Tenant Name', 'Tenant'),
         building_name: str(r, 'Building Name', 'Building'),
         unit_number: str(r, 'Unit Number', 'Unit No', 'Unit'),
-        amount: num(r, 'Cheque Amount (AED)', 'Amount (AED)', 'Cheque Amount', 'Amount'),
-        due_date: dateField(r, 'Due Date (DD/MM/YYYY)', 'Due Date', 'Date'),
+        amount: num(r, 'Amount (AED)', 'Cheque Amount (AED)', 'Cheque Amount', 'Amount'),
+        due_date: dateField(r, 'Due Date (DD-MM-YYYY)', 'Due Date (DD/MM/YYYY)', 'Due Date', 'Date'),
         bank_name: str(r, 'Bank Name', 'Bank'),
         cheque_number: str(r, 'Cheque Number', 'Cheque No', 'Cheque #'),
-        status: (str(r, 'Status') || 'pending') as 'pending' | 'collected' | 'bounced' | 'cancelled',
+        status: 'pending' as const,
         reminder_sent_7: false,
         reminder_sent_1: false,
         notes: str(r, 'Notes'),
@@ -241,14 +259,14 @@ export async function importExcelBuffer(buffer: Buffer): Promise<ImportResult> {
     }
     console.log(`[EXCEL IMPORT] Cheques: ${chequeCount}`);
   } else {
-    errors.push(`Sheet "🧾 Cheques" not found. Sheets in file: ${wb.SheetNames.join(', ')}`);
+    errors.push(`Sheet "Cheques" not found. Sheets in file: ${wb.SheetNames.join(', ')}`);
   }
 
-  // ── Owner Details (log only) ───────────────────────────────────────────────
-  const ownerSheet = findSheet(wb, '⚙️ Your Details');
-  if (ownerSheet) {
-    const rows = getRows(wb, ownerSheet);
-    console.log(`[EXCEL IMPORT] Owner details sheet found — ${rows.length} rows (not imported)`);
+  // ── Settings (log only) ───────────────────────────────────────────────────
+  const settingsSheet = findSheet(wb, 'Settings', '⚙️ Your Details', 'Your Details');
+  if (settingsSheet) {
+    const rows = getRows(wb, settingsSheet);
+    console.log(`[EXCEL IMPORT] Settings sheet found — ${rows.length} rows (not imported)`);
   }
 
   return { buildings: buildingCount, units: unitCount, tenants: tenantCount, cheques: chequeCount, errors };
