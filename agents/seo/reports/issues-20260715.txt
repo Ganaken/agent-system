@@ -1,0 +1,22 @@
+Mulak.app — Top SEO & Trust Issues to Fix (2026-07-15)
+Plain English, most important first. WHAT is wrong and WHY it matters.
+
+1. Your Privacy Policy and Terms pages still literally say "placeholder text pending final legal review." Anyone who reads them — a customer, Google, or an AI assistant — sees unfinished legal pages on a service that handles people's rent and cheque money. That wrecks trust instantly and could be a legal problem.
+
+2. You advertise "bank-grade" security, but there's no page anywhere that backs it up — the "Security" link just scrolls to a marketing section. Making a big safety promise with zero proof scares off serious customers and can look misleading.
+
+3. When someone mistypes your web address or clicks an old link, they get silently dumped on your locked login screen instead of a normal "page not found." Google sees this as broken behavior and it can quietly drag down how your whole site ranks.
+
+4. Your site is really just one thin sales page (about 1,000 words total — no blog, guides, or FAQ). There's almost nothing for Google or AI tools like ChatGPT to read, so you simply won't appear when Dubai landlords search for help or answers.
+
+5. The competitors sitting on page one of Google have lots of pages (features, comparisons, "best software" lists, UAE-rules guides). Google rarely ranks a single one-pager for competitive searches like "Dubai property management software," so today you're basically invisible for your most valuable keywords.
+
+6. Your homepage is slower than it should be because it loads 17 font files and a big off-screen image before the main picture even appears. Slow pages annoy visitors and Google counts speed against you in rankings.
+
+7. Your Arabic version only works as an on-screen button — Google can't see or list it. So every landlord searching in Arabic finds nothing from you, even though Arabic speakers are a core part of your market.
+
+8. Several links in your footer are fake or point to the wrong place: "Blog" and "Security" just jump around the homepage, and "About" doesn't go to your real About page. This frustrates visitors and wastes Google's time hitting dead ends.
+
+9. You have no customer reviews, testimonials, or listings on trusted sites like G2 or Capterra, and your social icons link to blank Twitter/LinkedIn pages. With no outside proof your company exists, buyers and AI tools have little reason to trust or recommend you.
+
+10. Your Google title shows your brand name twice ("Mulak — Property Management for Dubai — Mulak"), and the pricing/company details hidden in your page's code don't match what's shown on screen. These are small, sloppy signals that make Google trust and understand your business less.

@@ -1,0 +1,22 @@
+Mulak.app — Top SEO & Trust Issues to Fix (2026-07-16)
+Plain English, most important first. WHAT is wrong and WHY it matters.
+
+1. Your Privacy Policy and Terms pages still literally say "This is placeholder text pending final legal review." Anyone who reads them — a customer, Google, or an AI assistant — sees unfinished legal pages on a service that handles people's rent and cheque money. That destroys trust instantly and is a real legal risk.
+
+2. The hidden product details in your page's code tell Google and AI tools that Mulak costs a flat "1000 AED," but your actual page says "start free, then AED 1000 a month, or custom for agencies." Showing a price that contradicts your real pricing can get your listing penalized by Google and makes AI assistants quote the wrong price.
+
+3. Your whole website is just four thin pages with no blog, guides, or FAQ. There is almost nothing for Google or ChatGPT to read, so you simply won't show up when Dubai landlords search for help — you can only be found by people already typing your name.
+
+4. There's no proof you're a real, trustworthy company: no team or founder details, no customer reviews, no testimonials, no track record. For a product asking landlords to trust it with financial and tenant data, buyers (and Google) have little reason to believe in you.
+
+5. Your social media links go nowhere — they point to blank Twitter, LinkedIn, and WhatsApp home pages instead of real accounts, and you have no company LinkedIn page or listings on review sites. To the outside world it looks like the company barely exists online.
+
+6. AI assistants like ChatGPT and Google's AI answers have nothing they can quote about you, because your pages have no clear questions-and-answers or facts written in a way they can lift. So when people ask AI about Dubai landlord software, Mulak won't be mentioned.
+
+7. Your site is missing standard web security protections that browsers and Google's quality checks look for. For an app handling money and personal data, their absence looks careless and quietly counts against your trust score.
+
+8. Your homepage is heavier and slower than it needs to be: it loads over a megabyte of oversized screenshot images (one is 600KB) and pulls in several fonts you don't even use. Slow pages frustrate visitors and Google counts speed against you.
+
+9. As your homepage loads, images pop in without reserved space, so the page visibly jumps around. Google measures this "jumpiness" and penalizes it, and it feels broken to visitors.
+
+10. Google is being told two slightly different versions of your web address (the non-www address redirects the wrong way, and your page's code lists the address inconsistently). This splits your credit with Google and makes it trust and understand your site less.

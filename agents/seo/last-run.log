@@ -1,0 +1,23 @@
+Audit complete. Both files are written to `/root/agents/seo/reports/`.
+
+## Summary
+
+**Mulak** — an AI property-management SaaS for Dubai landlords (publisher: Ganaken) — was audited across 7 dimensions using 6 parallel specialists plus direct verification. No Google/CrUX or paid backlink data was available (free tier), so performance/authority figures are lab-estimated.
+
+**SEO Health Score: 55/100** — technically well-built, but capped by trust and content gaps.
+
+The headline finding: the engineering is genuinely clean (SSR, correct robots.txt, canonicals, HSTS, valid sitemap, well-formed `llms.txt`, optimized LCP), but there are **2 critical problems** and a **structural inability to be found**:
+
+1. **Critical** — Privacy & Terms still say *"placeholder text pending final legal review"* on a product handling rent/cheque/tenant data.
+2. **Critical** — Structured-data pricing (`Offer: 1000 AED` flat) contradicts the real "free trial → AED 1000/mo → custom" model, a Google structured-data policy violation.
+3. Only 4 thin pages, no blog/FAQ/guides → no path to rank for commercial keywords or be cited by AI.
+4. No E-E-A-T (team, reviews, testimonials) and dead-end/placeholder social links.
+5. Missing security headers; a temporary (307) non-www redirect; schema www mismatch; image CLS risk; oversized PNGs and 3 unused preloaded fonts.
+
+Files:
+- **`reports/audit-20260716.md`** — full report with per-category scores, evidence tables, a 4-phase action plan, and the trailing `SCORES|overall=55|critical=2|warnings=26|passed=22` line.
+- **`reports/issues-20260716.txt`** — the 10 highest-priority critical/high issues in plain, founder-friendly English (what's wrong + why it matters, most important first).
+
+Note: the SXO specialist run hit a transient upstream API 500; I synthesized that section from the SERP/page-type evidence the GEO and content analyses surfaced plus direct inspection, and flagged the limitation in the report. If you'd like, I can generate a professional PDF version via `/seo google report full`.
+Done. The report is at `/root/agents/seo/reports/seo-20260716.html`.
+{"ok":true,"result":{"message_id":564,"from":{"id":8909087497,"is_bot":true,"first_name":"Argus","username":"Mulak_argus_bot"},"chat":{"id":607873860,"first_name":"Abdulla","last_name":"Ahli","type":"private"},"date":1784227229,"text":"\ud83d\udd0d SEO Weekly Audit \u2014 mulak.app\nScore: 55/100\nCritical: 2 | Warnings: 26 | Passed: 22\n\n\ud83d\udcc4 Full designed report:\nhttps://crm.mulak.app/reports/seo/2026-07-16?t=6f47307d-f5cc-4bfb-bb10-76919c9e169e\n\nReply with which issue numbers to fix.","entities":[{"offset":22,"length":9,"type":"url"},{"offset":112,"length":83,"type":"url"}],"link_preview_options":{"url":"https://crm.mulak.app/reports/seo/2026-07-16?t=6f47307d-f5cc-4bfb-bb10-76919c9e169e"}}}
